@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-blue: #0D6EFD;
+  --color-brand-blue-soft: #2563EB;
+  --color-brand-bg: #F0F7FF;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+/* Custom scrollbar untuk dashboard padat */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Kustomisasi global transitions & resets */
+body {
+  color: #475569;          /* slate-600 */
+  background-color: #f8fafc; /* slate-50 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Custom container untuk tabel data */
+.data-table-container {
+  overflow: hidden;
+  border-radius: 0.75rem;   /* rounded-xl */
+  border: 1px solid rgb(226 232 240 / 0.8); /* border-slate-200/80 */
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.07);
+}

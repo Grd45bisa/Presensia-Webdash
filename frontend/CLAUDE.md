@@ -43,5 +43,5 @@ Jalankan dari direktori `Website/frontend/`:
 ### 3. Integrasi Supabase & API Backend
 - Gunakan Supabase Client di `src/lib/supabase/client.js` untuk interaksi langsung (Auth login admin, fetch read-only data yang diamankan RLS).
 - Operasi tulis/ubah tingkat admin (seperti membuat user karyawan baru, generate QR, reset device binding) **TIDAK BOLEH** langsung memanggil Supabase dengan service role key di frontend. Delegasikan ke Express.js backend:
-  - Base URL: `import.meta.env.VITE_BACKEND_URL` (default: `http://localhost:5000`)
+  - Base URL: `import.meta.env.VITE_BACKEND_URL` (default: `https://apipre.kitapunya.web.id`)
   - Sertakan token admin JWT di header: `Authorization: Bearer <access_token>`

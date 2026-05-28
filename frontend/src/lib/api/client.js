@@ -1,21 +1,59 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL =
+  import.meta.env.VITE_BACKEND_URL ||
+  import.meta.env.VITE_API_URL ||
+  'https://apipre.kitapunya.web.id';
+
+const GET_CACHE_TTL_MS = 45_000;
+const getCache = new Map();
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
+  const method = String(options.method || 'GET').toUpperCase();
+  const isCacheableGet = method === 'GET';
+  const cacheKey = `${method}:${path}`;
 
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok || payload.success === false) {
-    throw new Error(payload.message || 'Request API gagal.');
+  if (isCacheableGet) {
+    const cached = getCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.promise;
+    }
   }
 
-  return payload.data;
+  const promise = fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+      ...options,
+    })
+    .then(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload.message || 'Request API gagal.');
+      }
+
+      if (!isCacheableGet) {
+        getCache.clear();
+      }
+
+      return payload.data;
+    })
+    .catch((error) => {
+      if (isCacheableGet) {
+        getCache.delete(cacheKey);
+      }
+
+      throw error;
+    });
+
+  if (isCacheableGet) {
+    getCache.set(cacheKey, {
+      expiresAt: Date.now() + GET_CACHE_TTL_MS,
+      promise,
+    });
+  }
+
+  return promise;
 }
 
 async function requestBlob(path, options = {}) {
@@ -224,4 +262,56 @@ export function revokeDevice(employeeId, deviceId) {
     method: 'POST',
     body: JSON.stringify({ employee_id: employeeId, device_id: deviceId }),
   });
+}
+
+export function prefetchRouteData(path) {
+  const prefetcher = routePrefetchers[path];
+  if (!prefetcher) return Promise.resolve();
+
+  return Promise.allSettled(prefetcher()).then(() => undefined);
+}
+
+function routePrefetchersForToday() {
+  const today = new Date();
+  const to = toDateInput(today);
+
+  return {
+    worklog: {
+      from: toDateInput(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7)),
+      to,
+      employee_id: '',
+      project: '',
+    },
+    report: {
+      from: toDateInput(new Date(today.getFullYear(), today.getMonth(), 1)),
+      to,
+      department: '',
+      status: '',
+    },
+  };
+}
+
+const routePrefetchers = {
+  '/': () => [getDashboardData('supabase')],
+  '/karyawan': () => [getEmployees()],
+  '/presensi': () => [getAttendanceRecords()],
+  '/lokasi-kantor': () => [getOfficeLocations()],
+  '/qr-login': () => [getEmployees(), getQrLoginTokens()],
+  '/devices': () => [getDevices()],
+  '/worklog': () => {
+    const { worklog } = routePrefetchersForToday();
+    return [getWorklogs(worklog), getEmployees()];
+  },
+  '/laporan': () => {
+    const { report } = routePrefetchersForToday();
+    return [getAttendanceReport(report)];
+  },
+  '/pengaturan': () => [getGlobalSettings(), getWorkShifts()],
+};
+
+function toDateInput(value) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }

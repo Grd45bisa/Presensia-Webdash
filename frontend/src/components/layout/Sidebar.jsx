@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { getSidebarData } from '@/lib/api/client';
+import { getSidebarData, prefetchRouteData } from '@/lib/api/client';
 
 const menuGroups = [
   {
@@ -262,12 +262,18 @@ function SidebarLink({ item, counters, onMobileClose }) {
     ? counters[item.textBadgeKey]
     : counters[item.badgeKey];
   const hasBadge = item.textBadgeKey ? Boolean(badgeValue) : Number(badgeValue || 0) > 0;
+  const handleIntent = () => {
+    prefetchRouteData(item.path);
+  };
 
   return (
     <NavLink
       to={item.path}
       end={item.path === '/'}
       onClick={onMobileClose}
+      onFocus={handleIntent}
+      onMouseEnter={handleIntent}
+      onTouchStart={handleIntent}
       className={({ isActive }) =>
         `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition ${
           isActive

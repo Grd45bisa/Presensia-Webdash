@@ -54,6 +54,8 @@ function formatWorkDuration(checkIn, checkOut) {
 
 function buildLateStatus(row) {
   const lateMinutes = Number(row.late_minutes || 0);
+  if (row.schedule_status === 'early_leave') return 'Pulang duluan';
+  if (row.schedule_status === 'checkout_late_prompt') return 'Lewat jam pulang';
   if (row.schedule_status === 'late' || lateMinutes > 0 || row.status === 'late') {
     return lateMinutes > 0 ? `Terlambat ${lateMinutes} menit` : 'Terlambat';
   }

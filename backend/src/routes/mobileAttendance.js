@@ -75,6 +75,17 @@ function normalizeForWindow(value, start, crossesMidnight) {
   return value < start ? value + 1440 : value;
 }
 
+function getJakartaMinutes(value = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(value);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Number(map.hour) * 60 + Number(map.minute);
+}
+
 function evaluateCheckIn(rule, nowMinutes) {
   const start = timeToMinutes(rule.check_in_start);
   const end = normalizeForWindow(timeToMinutes(rule.check_in_end), start, rule.crosses_midnight);
@@ -96,15 +107,22 @@ function evaluateCheckOut(rule, nowMinutes) {
   const start = timeToMinutes(rule.check_out_start);
   const end = normalizeForWindow(timeToMinutes(rule.check_out_end), start, rule.crosses_midnight);
   const current = normalizeForWindow(nowMinutes, start, rule.crosses_midnight);
+  const beforeCheckoutWindow = current < start;
   const afterNormalWindow = current > end;
 
   return {
-    allowed: current >= start,
-    schedule_status: afterNormalWindow ? 'checkout_late_prompt' : 'present',
+    allowed: true,
+    schedule_status: beforeCheckoutWindow
+      ? 'early_leave'
+      : afterNormalWindow
+        ? 'checkout_late_prompt'
+        : 'present',
     requires_checkout_reason: afterNormalWindow,
-    message: afterNormalWindow
-      ? 'Check-out melewati jam normal. Tanyakan apakah karyawan lembur atau lupa absen pulang.'
-      : 'Check-out sesuai jadwal.',
+    message: beforeCheckoutWindow
+      ? 'Check-out lebih awal dari jam pulang normal dan akan ditandai pulang duluan.'
+      : afterNormalWindow
+        ? 'Check-out melewati jam normal. Tanyakan apakah karyawan lembur atau lupa absen pulang.'
+        : 'Check-out sesuai jadwal.',
   };
 }
 
@@ -296,7 +314,7 @@ router.post('/validate-schedule', async (req, res, next) => {
 
     const { schedule, shifts } = await loadScheduleConfig();
     const now = timestamp ? new Date(timestamp) : new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowMinutes = getJakartaMinutes(now);
 
     if (!schedule.scheduleEnabled || schedule.scheduleMode === 'free') {
       return res.json({

@@ -560,7 +560,8 @@ function ExportDetailLine({ label, value, icon: Icon }) {
 }
 
 function ReportRow({ row }) {
-  const isLate = isAttendanceLate(row);
+  const status = scheduleStatusLabel(row);
+  const isWarning = status !== 'Tidak terlambat';
 
   return (
     <tr className="hover:bg-blue-50/30 transition-colors print:hover:bg-transparent">
@@ -585,10 +586,10 @@ function ReportRow({ row }) {
       {/* Jam Masuk */}
       <td className="px-5 py-3.5">
         <div>
-          <span className={`font-bold text-sm ${isLate ? 'text-amber-600' : 'text-slate-700'}`}>
+          <span className={`font-bold text-sm ${isAttendanceLate(row) ? 'text-amber-600' : 'text-slate-700'}`}>
             {formatTime(row.check_in)}
           </span>
-          {isLate && (
+          {isAttendanceLate(row) && (
             <span className="block text-[10px] text-amber-500 font-bold uppercase mt-0.5">{lateLabel(row)}</span>
           )}
         </div>
@@ -605,8 +606,8 @@ function ReportRow({ row }) {
       <td className="px-5 py-3.5">
         <div>
           <span className="font-bold text-sm text-slate-700">{workDuration(row.check_in, row.check_out)}</span>
-          <span className={`block text-[10px] font-bold uppercase mt-0.5 ${isLate ? 'text-amber-500' : 'text-emerald-600'}`}>
-            {isLate ? lateLabel(row) : 'Tidak terlambat'}
+          <span className={`block text-[10px] font-bold uppercase mt-0.5 ${isWarning ? 'text-amber-500' : 'text-emerald-600'}`}>
+            {status}
           </span>
         </div>
       </td>
@@ -634,7 +635,8 @@ function ReportRow({ row }) {
 }
 
 function ReportCard({ row }) {
-  const isLate = isAttendanceLate(row);
+  const status = scheduleStatusLabel(row);
+  const isWarning = status !== 'Tidak terlambat';
 
   return (
     <article className="bg-white rounded-2xl border border-slate-200 p-4 hover:shadow-xs transition-shadow flex flex-col justify-between h-full">
@@ -656,7 +658,7 @@ function ReportCard({ row }) {
       <div className="grid grid-cols-2 gap-2 mt-4 bg-slate-50/50 p-2.5 rounded-xl border border-slate-100 text-xs">
         <div>
           <span className="block text-[10px] text-slate-400 font-medium">Masuk</span>
-          <span className={`font-bold mt-0.5 block ${isLate ? 'text-amber-600' : 'text-slate-700'}`}>
+          <span className={`font-bold mt-0.5 block ${isAttendanceLate(row) ? 'text-amber-600' : 'text-slate-700'}`}>
             {formatTime(row.check_in)}
           </span>
         </div>
@@ -670,8 +672,8 @@ function ReportCard({ row }) {
           <span className="block text-[10px] text-slate-400 font-medium">Total jam kerja</span>
           <div className="mt-0.5 flex items-center justify-between gap-2">
             <span className="font-bold text-slate-700">{workDuration(row.check_in, row.check_out)}</span>
-            <span className={`text-[10px] font-bold uppercase ${isLate ? 'text-amber-600' : 'text-emerald-600'}`}>
-              {isLate ? lateLabel(row) : 'Tidak terlambat'}
+            <span className={`text-[10px] font-bold uppercase ${isWarning ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {status}
             </span>
           </div>
         </div>
@@ -735,7 +737,7 @@ function PrintReportTable({ records }) {
               <td className="border border-slate-300 px-2 py-1.5">{formatTime(row.check_in)}</td>
               <td className="border border-slate-300 px-2 py-1.5">{formatTime(row.check_out)}</td>
               <td className="border border-slate-300 px-2 py-1.5 font-bold">{workDuration(row.check_in, row.check_out)}</td>
-              <td className="border border-slate-300 px-2 py-1.5">{isAttendanceLate(row) ? lateLabel(row) : 'Tidak terlambat'}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{scheduleStatusLabel(row)}</td>
               <td className="border border-slate-300 px-2 py-1.5">{attendanceModeLabel(row.attendance_mode)}</td>
               <td className="border border-slate-300 px-2 py-1.5">{row.office_location_name || 'Remote/Lapangan'}</td>
               <td className="border border-slate-300 px-2 py-1.5">{geofenceLabel(row)}</td>
@@ -772,6 +774,12 @@ function isAttendanceLate(row) {
 function lateLabel(row) {
   const minutes = Number(row.late_minutes || 0);
   return minutes > 0 ? `Terlambat ${minutes} menit` : 'Terlambat';
+}
+
+function scheduleStatusLabel(row) {
+  if (row.schedule_status === 'early_leave') return 'Pulang duluan';
+  if (row.schedule_status === 'checkout_late_prompt') return 'Lewat jam pulang';
+  return isAttendanceLate(row) ? lateLabel(row) : 'Tidak terlambat';
 }
 
 function workDuration(checkIn, checkOut) {

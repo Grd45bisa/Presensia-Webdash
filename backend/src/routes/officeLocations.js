@@ -141,14 +141,10 @@ router.get('/', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[GET Office Locations Fallback]', err);
-    return res.json({
-      success: true,
-      data: {
-        source: 'mock',
-        fallbackReason: 'Gagal membaca Supabase, memakai data mock.',
-        offices: mockStore.listOffices(),
-      },
+    console.error('[GET Office Locations Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: `Gagal membaca lokasi kantor dari database. ${err.message}`,
     });
   }
 });

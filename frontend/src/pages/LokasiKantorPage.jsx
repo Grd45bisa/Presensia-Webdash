@@ -21,7 +21,17 @@ import {
   updateOfficeLocation,
 } from '@/lib/api/client';
 
-const defaultForm = {
+const emptyForm = {
+  name: '',
+  address: '',
+  latitude: '',
+  longitude: '',
+  radius_meters: '',
+  is_active: true,
+  maps_url: '',
+};
+
+const islamicRayaPoint = {
   name: 'Kantor Islamic Raya',
   address: 'Universitas Cendekia Abditama, Jl. Islamic Raya, Klp. Dua, Kecamatan Kelapa Dua, Kabupaten Tangerang, Banten 15811',
   latitude: -6.227905,
@@ -42,7 +52,7 @@ export default function LokasiKantorPage() {
   const [modalMode, setModalMode] = useState(null);
   const [selectedOffice, setSelectedOffice] = useState(null);
   const [previewOfficeId, setPreviewOfficeId] = useState(null);
-  const [form, setForm] = useState(defaultForm);
+  const [form, setForm] = useState(emptyForm);
 
   const loadOffices = async () => {
     setIsLoading(true);
@@ -78,12 +88,12 @@ export default function LokasiKantorPage() {
   const totalUsers = offices.reduce((sum, office) => sum + Number(office.employee_count || 0), 0);
   const selectedPreviewOffice = useMemo(() => {
     const byId = offices.find((office) => office.id === previewOfficeId);
-    return byId || filteredOffices[0] || defaultForm;
+    return byId || filteredOffices[0] || null;
   }, [filteredOffices, offices, previewOfficeId]);
 
   const openCreateModal = () => {
     setSelectedOffice(null);
-    setForm(defaultForm);
+    setForm(emptyForm);
     setModalMode('create');
   };
 
@@ -104,7 +114,7 @@ export default function LokasiKantorPage() {
   const closeModal = () => {
     setModalMode(null);
     setSelectedOffice(null);
-    setForm(defaultForm);
+    setForm(emptyForm);
   };
 
   const handleChange = (event) => {
@@ -118,7 +128,7 @@ export default function LokasiKantorPage() {
   const useIslamicRayaPoint = () => {
     setForm((current) => ({
       ...current,
-      ...defaultForm,
+      ...islamicRayaPoint,
     }));
   };
 
@@ -275,7 +285,7 @@ export default function LokasiKantorPage() {
                     <OfficeRow
                       key={office.id}
                       office={office}
-                      isSelected={selectedPreviewOffice.id === office.id}
+                      isSelected={selectedPreviewOffice?.id === office.id}
                       onSelect={() => setPreviewOfficeId(office.id)}
                       onEdit={openEditModal}
                       onDelete={handleDelete}
@@ -300,7 +310,7 @@ export default function LokasiKantorPage() {
                 <OfficeMobileCard
                   key={office.id}
                   office={office}
-                  isSelected={selectedPreviewOffice.id === office.id}
+                  isSelected={selectedPreviewOffice?.id === office.id}
                   onSelect={() => setPreviewOfficeId(office.id)}
                   onEdit={openEditModal}
                   onDelete={handleDelete}
@@ -459,9 +469,24 @@ function OfficeMobileCard({ office, isSelected, onSelect, onEdit, onDelete }) {
 }
 
 function MapPreview({ office }) {
+  if (!office) {
+    return (
+      <aside className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm 2xl:sticky 2xl:top-20 2xl:self-start">
+        <div className="mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Preview Geofence</h3>
+          <p className="mt-1 text-sm text-slate-500">Belum ada lokasi kantor yang tersimpan di database.</p>
+        </div>
+
+        <div className="flex h-[260px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm font-medium text-slate-500 sm:h-[340px] 2xl:h-[360px]">
+          Tambahkan lokasi kantor untuk menampilkan peta dan radius geofence.
+        </div>
+      </aside>
+    );
+  }
+
   const radius = Number(office.radius_meters || 100);
-  const latitude = Number(office.latitude || defaultForm.latitude);
-  const longitude = Number(office.longitude || defaultForm.longitude);
+  const latitude = Number(office.latitude || islamicRayaPoint.latitude);
+  const longitude = Number(office.longitude || islamicRayaPoint.longitude);
   const mapsEmbedUrl = `https://maps.google.com/maps?q=${latitude},${longitude}&z=18&output=embed`;
   const mapsUrl = office.maps_url || `https://www.google.com/maps?q=${latitude},${longitude}`;
 
@@ -532,8 +557,8 @@ function OfficeForm({
   onSubmit,
   onCancel,
 }) {
-  const latitude = Number(form.latitude || defaultForm.latitude);
-  const longitude = Number(form.longitude || defaultForm.longitude);
+  const latitude = Number(form.latitude || islamicRayaPoint.latitude);
+  const longitude = Number(form.longitude || islamicRayaPoint.longitude);
   const mapsUrl = form.maps_url || `https://www.google.com/maps?q=${latitude},${longitude}`;
 
   return (

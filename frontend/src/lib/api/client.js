@@ -95,6 +95,30 @@ export function updateGlobalSettings(settings) {
   });
 }
 
+export function getWorkShifts() {
+  return request('/api/admin/settings/shifts');
+}
+
+export function createWorkShift(payload) {
+  return request('/api/admin/settings/shifts', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateWorkShift(id, payload) {
+  return request(`/api/admin/settings/shifts/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deactivateWorkShift(id) {
+  return request(`/api/admin/settings/shifts/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
 export function getEmployees() {
   return request('/api/admin/employees');
 }

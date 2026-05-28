@@ -51,7 +51,88 @@ async function listFromSupabase() {
     .order('updated_at', { ascending: false });
 
   if (error) throw error;
-  return (data || []).map(normalizeDevice);
+  const devices = (data || []).map(normalizeDevice);
+
+  const { data: profiles, error: profilesError } = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name, email, active_device_id, device_bound_at')
+    .not('active_device_id', 'is', null);
+
+  if (profilesError) throw profilesError;
+
+  const knownDeviceKeys = new Set(devices.map((device) => `${device.employee_id}:${device.device_id}`));
+  const profileOnlyDevices = (profiles || [])
+    .filter((profile) => !knownDeviceKeys.has(`${profile.id}:${profile.active_device_id}`))
+    .map((profile) => normalizeDevice({
+      id: `profile-${profile.id}-${profile.active_device_id}`,
+      employee_id: profile.id,
+      employee_name: profile.full_name,
+      employee_email: profile.email,
+      device_id: profile.active_device_id,
+      device_name: 'Device aktif',
+      platform: 'unknown',
+      app_version: '-',
+      is_active: true,
+      is_current_device: true,
+      bound_via: 'qr_login',
+      last_seen_at: profile.device_bound_at,
+      created_at: profile.device_bound_at,
+      updated_at: profile.device_bound_at,
+    }));
+
+  return [...profileOnlyDevices, ...devices];
+}
+
+async function deleteByEmployee(table, employeeId) {
+  const { error } = await supabaseAdmin
+    .from(table)
+    .delete()
+    .eq('employee_id', employeeId);
+
+  if (error) {
+    console.warn(`[Reset User Data Warning] ${table}`, error);
+    return { table, deleted: false, message: error.message };
+  }
+
+  return { table, deleted: true };
+}
+
+async function resetEmployeeData(employeeId) {
+  const tables = [
+    'notification_reads',
+    'active_timers',
+    'reminder_events',
+    'worklog_entries',
+    'projects',
+    'work_schedule_settings',
+    'attendance_records',
+    'face_embeddings',
+    'qr_login_tokens',
+    'user_devices',
+  ];
+
+  const results = [];
+  for (const table of tables) {
+    results.push(await deleteByEmployee(table, employeeId));
+  }
+
+  const { error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .update({
+      active_device_id: null,
+      device_bound_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', employeeId);
+
+  if (profileError) {
+    console.warn('[Reset User Data Warning] profiles', profileError);
+    results.push({ table: 'profiles', deleted: false, message: profileError.message });
+  } else {
+    results.push({ table: 'profiles', deleted: true });
+  }
+
+  return results;
 }
 
 router.get('/', async (req, res) => {
@@ -97,33 +178,21 @@ router.post('/reset', async (req, res) => {
     mockStore.resetEmployeeDevices(employeeId);
     return res.json({
       success: true,
-      message: 'Semua device karyawan berhasil dicopot.',
+      message: 'Data user mock berhasil direset.',
       data: { employee_id: employeeId },
     });
   }
 
   try {
-    const { error: deviceError } = await supabaseAdmin
-      .from('user_devices')
-      .update({ is_active: false })
-      .eq('employee_id', employeeId);
-
-    if (deviceError) throw deviceError;
-
-    const { error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .update({ active_device_id: null, device_bound_at: null })
-      .eq('id', employeeId);
-
-    if (profileError) throw profileError;
+    const resetResults = await resetEmployeeData(employeeId);
 
     return res.json({
       success: true,
-      message: 'Semua device karyawan berhasil dicopot.',
-      data: { employee_id: employeeId },
+      message: 'Data operasional user berhasil direset. User perlu QR Login ulang.',
+      data: { employee_id: employeeId, reset_results: resetResults },
     });
   } catch (err) {
-    console.error('[Reset Device Route Error]', err);
+    console.error('[Reset User Data Route Error]', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -158,22 +227,12 @@ router.post('/revoke', async (req, res) => {
 
     if (deviceError) throw deviceError;
 
-    const { data: profile, error: profileCheckError } = await supabaseAdmin
+    const { error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('active_device_id')
-      .eq('id', employeeId)
-      .single();
+      .update({ active_device_id: null, device_bound_at: null })
+      .eq('id', employeeId);
 
-    if (profileCheckError) throw profileCheckError;
-
-    if (profile?.active_device_id === deviceId) {
-      const { error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .update({ active_device_id: null, device_bound_at: null })
-        .eq('id', employeeId);
-
-      if (profileError) throw profileError;
-    }
+    if (profileError) throw profileError;
 
     return res.json({
       success: true,

@@ -333,6 +333,7 @@ export default function LaporanPage() {
                     <th className="px-5 py-3.5">Tanggal</th>
                     <th className="px-5 py-3.5">Presensi Masuk</th>
                     <th className="px-5 py-3.5">Presensi Keluar</th>
+                    <th className="px-5 py-3.5">Jam Kerja</th>
                     <th className="px-5 py-3.5">Tipe Kerja</th>
                     <th className="px-5 py-3.5">Verifikasi & GPS</th>
                   </tr>
@@ -342,7 +343,7 @@ export default function LaporanPage() {
                     <TableSkeletonRows />
                   ) : filteredRecords.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="px-5 py-16">
+                      <td colSpan="7" className="px-5 py-16">
                         <EmptyReportState onReset={handleResetFilters} />
                       </td>
                     </tr>
@@ -528,7 +529,7 @@ function ExportDetailLine({ label, value, icon: Icon }) {
 }
 
 function ReportRow({ row }) {
-  const isLate = row.status === 'late' || row.status === 'terlambat';
+  const isLate = isAttendanceLate(row);
 
   return (
     <tr className="hover:bg-blue-50/30 transition-colors print:hover:bg-transparent">
@@ -557,7 +558,7 @@ function ReportRow({ row }) {
             {formatTime(row.check_in)}
           </span>
           {isLate && (
-            <span className="block text-[10px] text-amber-500 font-bold uppercase mt-0.5">Terlambat</span>
+            <span className="block text-[10px] text-amber-500 font-bold uppercase mt-0.5">{lateLabel(row)}</span>
           )}
         </div>
       </td>
@@ -567,6 +568,16 @@ function ReportRow({ row }) {
         <span className="font-bold text-sm text-slate-700">
           {formatTime(row.check_out)}
         </span>
+      </td>
+
+      {/* Total Jam Kerja */}
+      <td className="px-5 py-3.5">
+        <div>
+          <span className="font-bold text-sm text-slate-700">{workDuration(row.check_in, row.check_out)}</span>
+          <span className={`block text-[10px] font-bold uppercase mt-0.5 ${isLate ? 'text-amber-500' : 'text-emerald-600'}`}>
+            {isLate ? lateLabel(row) : 'Tidak terlambat'}
+          </span>
+        </div>
       </td>
 
       {/* Tipe Kerja */}
@@ -592,7 +603,7 @@ function ReportRow({ row }) {
 }
 
 function ReportCard({ row }) {
-  const isLate = row.status === 'late' || row.status === 'terlambat';
+  const isLate = isAttendanceLate(row);
 
   return (
     <article className="bg-white rounded-2xl border border-slate-200 p-4 hover:shadow-xs transition-shadow flex flex-col justify-between h-full">
@@ -624,6 +635,15 @@ function ReportCard({ row }) {
             {formatTime(row.check_out)}
           </span>
         </div>
+        <div className="col-span-2 border-t border-slate-100 pt-2">
+          <span className="block text-[10px] text-slate-400 font-medium">Total jam kerja</span>
+          <div className="mt-0.5 flex items-center justify-between gap-2">
+            <span className="font-bold text-slate-700">{workDuration(row.check_in, row.check_out)}</span>
+            <span className={`text-[10px] font-bold uppercase ${isLate ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {isLate ? lateLabel(row) : 'Tidak terlambat'}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-slate-100">
@@ -646,6 +666,31 @@ function LocationBadge({ row }) {
   if (row.geofence_status === 'inside') return <Badge type="hadir">Dalam Area</Badge>;
   if (row.geofence_status === 'outside') return <Badge type="luar_geofence">Luar Area</Badge>;
   return <span className="text-xs font-semibold italic text-slate-400">Bebas Area</span>;
+}
+
+function isAttendanceLate(row) {
+  return row.schedule_status === 'late'
+    || Number(row.late_minutes || 0) > 0
+    || row.status === 'late'
+    || row.status === 'terlambat';
+}
+
+function lateLabel(row) {
+  const minutes = Number(row.late_minutes || 0);
+  return minutes > 0 ? `Terlambat ${minutes} menit` : 'Terlambat';
+}
+
+function workDuration(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return '-';
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diffMinutes = Math.max(0, Math.round((end - start) / 60000));
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+
+  if (hours <= 0) return `${minutes} menit`;
+  if (minutes === 0) return `${hours} jam`;
+  return `${hours} jam ${minutes} menit`;
 }
 
 function EmptyReportState({ onReset }) {
@@ -691,6 +736,12 @@ function TableSkeletonRows() {
       </td>
       <td className="px-5 py-4">
         <div className="h-5 bg-slate-200 rounded-full w-16" />
+      </td>
+      <td className="px-5 py-4">
+        <div className="space-y-1.5">
+          <div className="h-4 bg-slate-200 rounded w-16" />
+          <div className="h-3 bg-slate-200 rounded w-20" />
+        </div>
       </td>
       <td className="px-5 py-4">
         <div className="space-y-1.5">

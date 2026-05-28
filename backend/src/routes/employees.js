@@ -101,13 +101,9 @@ async function listOfficesFromSupabase() {
 
 router.get('/', async (req, res) => {
   if (!supabaseAdmin) {
-    return res.json({
-      success: true,
-      data: {
-        source: 'mock',
-        employees: mockStore.listEmployees(),
-        offices: mockStore.offices,
-      },
+    return res.status(503).json({
+      success: false,
+      message: 'Supabase backend belum dikonfigurasi.',
     });
   }
 
@@ -126,15 +122,11 @@ router.get('/', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[Employees GET Fallback]', err);
-    return res.json({
-      success: true,
-      data: {
-        source: 'mock',
-        fallbackReason: 'Gagal membaca Supabase, memakai data mock.',
-        employees: mockStore.listEmployees(),
-        offices: mockStore.offices,
-      },
+    console.error('[Employees GET Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal membaca data karyawan dari Supabase.',
+      error: err.message,
     });
   }
 });
@@ -189,7 +181,7 @@ router.post('/', async (req, res) => {
 
     const { data, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .insert({
+      .upsert({
         id: newUserId,
         email,
         full_name,
@@ -200,15 +192,19 @@ router.post('/', async (req, res) => {
         attendance_mode: attendance_mode || 'office',
         office_location_id: office_location_id || null,
         can_attend_outside_office: can_attend_outside_office !== undefined ? can_attend_outside_office : false,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'id',
       })
       .select()
       .single();
 
     if (profileError) {
+      console.error('[Create Employee Profile Error]', profileError);
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       return res.status(500).json({
         success: false,
-        message: 'Gagal membuat profil karyawan. Akun auth di-rollback.',
+        message: `Gagal membuat profil karyawan. ${profileError.message}`,
       });
     }
 

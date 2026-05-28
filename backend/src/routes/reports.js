@@ -1,6 +1,5 @@
 const express = require('express');
 const supabaseAdmin = require('../lib/supabaseAdmin');
-const attendanceMockStore = require('../lib/attendanceMockStore');
 
 const router = express.Router();
 
@@ -24,6 +23,8 @@ function normalizeSupabaseRecord(row) {
     geofence_status: row.geofence_status || 'not_checked',
     distance_from_office_meters: row.distance_from_office_meters,
     face_similarity: row.face_similarity,
+    schedule_status: row.schedule_status,
+    late_minutes: row.late_minutes,
     status: row.status || 'present',
     source: row.source || 'manual',
   };
@@ -85,6 +86,8 @@ async function listSupabaseRecords(filters) {
       geofence_status,
       distance_from_office_meters,
       face_similarity,
+      schedule_status,
+      late_minutes,
       profiles:employee_id (
         full_name,
         email,
@@ -110,31 +113,17 @@ async function listSupabaseRecords(filters) {
 
 async function getReportRecords(filters) {
   if (!supabaseAdmin) {
-    const allRecords = attendanceMockStore.listAttendance();
-    return {
-      source: 'mock',
-      allRecords,
-      records: applyFilters(allRecords, filters),
-    };
+    const error = new Error('Supabase backend belum dikonfigurasi.');
+    error.statusCode = 503;
+    throw error;
   }
 
-  try {
-    const dateFiltered = await listSupabaseRecords(filters);
-    return {
-      source: 'supabase',
-      allRecords: dateFiltered,
-      records: applyFilters(dateFiltered, filters),
-    };
-  } catch (err) {
-    console.error('[Reports Attendance Fallback]', err);
-    const allRecords = attendanceMockStore.listAttendance();
-    return {
-      source: 'mock',
-      fallbackReason: 'Gagal membaca Supabase, memakai data mock.',
-      allRecords,
-      records: applyFilters(allRecords, filters),
-    };
-  }
+  const dateFiltered = await listSupabaseRecords(filters);
+  return {
+    source: 'supabase',
+    allRecords: dateFiltered,
+    records: applyFilters(dateFiltered, filters),
+  };
 }
 
 function csvEscape(value) {
@@ -146,9 +135,29 @@ function formatCsvTime(value) {
   return new Date(value).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatWorkDuration(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return '';
+  const diffMinutes = Math.max(0, Math.round((new Date(checkOut) - new Date(checkIn)) / 60000));
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+
+  if (hours <= 0) return `${minutes} menit`;
+  if (minutes === 0) return `${hours} jam`;
+  return `${hours} jam ${minutes} menit`;
+}
+
+function formatLateStatus(row) {
+  const lateMinutes = Number(row.late_minutes || 0);
+  if (row.schedule_status === 'late' || lateMinutes > 0 || row.status === 'late') {
+    return lateMinutes > 0 ? `Terlambat ${lateMinutes} menit` : 'Terlambat';
+  }
+
+  return 'Tidak terlambat';
+}
+
 function toCsv(records) {
   const rows = [
-    ['Tanggal', 'Karyawan', 'Email', 'Departemen', 'Posisi', 'Check-in', 'Check-out', 'Tipe Presensi', 'Status Laporan', 'Geofence', 'Fake GPS'],
+    ['Tanggal', 'Karyawan', 'Email', 'Departemen', 'Posisi', 'Check-in', 'Check-out', 'Jam Kerja', 'Status Telat', 'Tipe Presensi', 'Status Laporan', 'Geofence', 'Fake GPS'],
     ...records.map((row) => [
       row.date,
       row.employee_name,
@@ -157,6 +166,8 @@ function toCsv(records) {
       row.position,
       formatCsvTime(row.check_in),
       formatCsvTime(row.check_out),
+      formatWorkDuration(row.check_in, row.check_out),
+      formatLateStatus(row),
       row.attendance_mode,
       getReportStatus(row),
       row.geofence_status,
@@ -176,7 +187,16 @@ router.get('/attendance', async (req, res) => {
     search: req.query.search,
   };
 
-  const result = await getReportRecords(filters);
+  let result;
+  try {
+    result = await getReportRecords(filters);
+  } catch (err) {
+    console.error('[Reports Attendance Error]', err);
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      message: err.message || 'Gagal membaca laporan presensi dari Supabase.',
+    });
+  }
 
   return res.json({
     success: true,
@@ -200,7 +220,16 @@ router.get('/attendance/export.csv', async (req, res) => {
     search: req.query.search,
   };
 
-  const result = await getReportRecords(filters);
+  let result;
+  try {
+    result = await getReportRecords(filters);
+  } catch (err) {
+    console.error('[Reports Attendance Export Error]', err);
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      message: err.message || 'Gagal membaca laporan presensi dari Supabase.',
+    });
+  }
   const filename = `Laporan_Presensi_${filters.from || 'awal'}_${filters.to || 'akhir'}.csv`;
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');

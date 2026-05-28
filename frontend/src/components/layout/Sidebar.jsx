@@ -12,8 +12,6 @@ import {
   QrCode,
   RefreshCw,
   Settings,
-  ShieldCheck,
-  Sparkles,
   Users,
   X,
 } from 'lucide-react';
@@ -126,7 +124,7 @@ const fallbackSidebarData = {
   },
 };
 
-export default function Sidebar({ onLogout, adminName, isMobileOpen = false, onMobileClose }) {
+export default function Sidebar({ onLogout, isMobileOpen = false, onMobileClose }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarData, setSidebarData] = useState(fallbackSidebarData);
@@ -202,29 +200,7 @@ export default function Sidebar({ onLogout, adminName, isMobileOpen = false, onM
       </nav>
 
       <div className="border-t border-slate-100 px-4 py-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-              <ShieldCheck size={18} />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-slate-900">{adminName || 'Admin Presensia'}</p>
-              <p className="mt-0.5 text-xs font-medium text-slate-500">Akses admin aktif</p>
-              <button
-                type="button"
-                onClick={() => {
-                  onMobileClose?.();
-                  navigate('/pengaturan');
-                }}
-                className="mt-2 inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:text-blue-700"
-              >
-                Detail akses <Sparkles size={13} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={loadSidebar}

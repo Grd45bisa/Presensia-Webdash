@@ -2,20 +2,27 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Building2,
   Camera,
-  Database,
+  Clock3,
   MapPin,
+  Plus,
   QrCode,
   RefreshCw,
   Save,
   ShieldCheck,
   SlidersHorizontal,
   Smartphone,
+  Trash2,
   UserCog,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import {
+  createWorkShift,
+  deactivateWorkShift,
   getGlobalSettings,
+  getWorkShifts,
+  updateBlinkDetectionSetting,
   updateGlobalSettings,
+  updateWorkShift,
 } from '@/lib/api/client';
 
 const defaultSettings = {
@@ -29,6 +36,14 @@ const defaultSettings = {
     defaultRadiusMeters: 100,
     officeCheckInToleranceMinutes: 15,
     allowRemoteWithoutGeofence: true,
+    scheduleEnabled: false,
+    scheduleMode: 'free',
+    officeCheckInStart: '07:30',
+    officeCheckInEnd: '08:15',
+    officeLateAfter: '08:00',
+    officeCheckOutStart: '17:00',
+    officeCheckOutEnd: '18:00',
+    requireShiftSelection: true,
   },
   qrLogin: {
     expirationMinutes: 5,
@@ -40,7 +55,7 @@ const defaultSettings = {
     showEvidencePhotoToAdmin: true,
   },
   dashboard: {
-    dataSource: 'auto',
+    dataSource: 'supabase',
   },
   admin: {
     auditLogEnabled: false,
@@ -48,8 +63,22 @@ const defaultSettings = {
   },
 };
 
+const emptyShift = {
+  name: '',
+  check_in_start: '07:30',
+  check_in_end: '08:15',
+  late_after: '08:00',
+  check_out_start: '17:00',
+  check_out_end: '18:00',
+  crosses_midnight: false,
+  is_active: true,
+};
+
 export default function PengaturanPage() {
   const [settings, setSettings] = useState(defaultSettings);
+  const [shifts, setShifts] = useState([]);
+  const [shiftForm, setShiftForm] = useState(emptyShift);
+  const [savingShiftId, setSavingShiftId] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -59,8 +88,12 @@ export default function PengaturanPage() {
     setIsLoading(true);
 
     try {
-      const data = await getGlobalSettings();
+      const [data, shiftData] = await Promise.all([
+        getGlobalSettings(),
+        getWorkShifts(),
+      ]);
       setSettings(mergeSettings(defaultSettings, data));
+      setShifts(shiftData);
       setMessage('Pengaturan global dimuat dari backend.');
     } catch (err) {
       setMessage(`Gagal memuat pengaturan. Memakai nilai default. ${err.message}`);
@@ -93,10 +126,12 @@ export default function PengaturanPage() {
       tone: 'amber',
     },
     {
-      title: 'Sumber Data',
-      value: settings.dashboard.dataSource,
-      icon: Database,
-      tone: 'violet',
+      title: 'Aturan Jam',
+      value: settings.attendance.scheduleEnabled
+        ? scheduleModeLabel(settings.attendance.scheduleMode)
+        : 'Bebas',
+      icon: Clock3,
+      tone: 'slate',
     },
   ]), [settings]);
 
@@ -108,6 +143,19 @@ export default function PengaturanPage() {
         ...patch,
       },
     }));
+  };
+
+  const handleBlinkToggle = async (checked) => {
+    updateSection('faceSecurity', { requiresBlink: checked });
+    setMessage('Menyimpan pengaturan liveness blink...');
+
+    try {
+      await updateBlinkDetectionSetting(checked);
+      setMessage(`Liveness blink ${checked ? 'diaktifkan' : 'dinonaktifkan'} dan siap dibaca mobile app.`);
+    } catch (err) {
+      updateSection('faceSecurity', { requiresBlink: !checked });
+      setMessage(`Gagal menyimpan liveness blink. ${err.message}`);
+    }
   };
 
   const handleSave = async () => {
@@ -126,6 +174,63 @@ export default function PengaturanPage() {
       setMessage(`Gagal menyimpan pengaturan. ${err.message}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleCreateShift = async () => {
+    setSavingShiftId('new');
+    setMessage('Menyimpan shift kerja...');
+
+    try {
+      const created = await createWorkShift(shiftForm);
+      setShifts((current) => [created, ...current]);
+      setShiftForm(emptyShift);
+      setMessage('Shift kerja berhasil ditambahkan.');
+    } catch (err) {
+      setMessage(`Gagal menambahkan shift kerja. ${err.message}`);
+    } finally {
+      setSavingShiftId('');
+    }
+  };
+
+  const handleUpdateShift = async (id, patch) => {
+    const previous = shifts;
+    const next = shifts.map((shift) => (
+      shift.id === id ? { ...shift, ...patch } : shift
+    ));
+    setShifts(next);
+    setSavingShiftId(id);
+
+    try {
+      const target = next.find((shift) => shift.id === id);
+      const saved = await updateWorkShift(id, target);
+      setShifts((current) => current.map((shift) => (
+        shift.id === id ? saved : shift
+      )));
+      setMessage('Shift kerja berhasil diperbarui.');
+    } catch (err) {
+      setShifts(previous);
+      setMessage(`Gagal memperbarui shift kerja. ${err.message}`);
+    } finally {
+      setSavingShiftId('');
+    }
+  };
+
+  const handleDeactivateShift = async (id) => {
+    const confirmed = window.confirm('Nonaktifkan shift ini? Shift tidak akan muncul sebagai pilihan karyawan.');
+    if (!confirmed) return;
+
+    setSavingShiftId(id);
+    try {
+      await deactivateWorkShift(id);
+      setShifts((current) => current.map((shift) => (
+        shift.id === id ? { ...shift, is_active: false } : shift
+      )));
+      setMessage('Shift kerja dinonaktifkan.');
+    } catch (err) {
+      setMessage(`Gagal menonaktifkan shift kerja. ${err.message}`);
+    } finally {
+      setSavingShiftId('');
     }
   };
 
@@ -231,6 +336,62 @@ export default function PengaturanPage() {
                   checked={settings.attendance.allowRemoteWithoutGeofence}
                   onChange={(checked) => updateSection('attendance', { allowRemoteWithoutGeofence: checked })}
                 />
+                <ToggleRow
+                  title="Aktifkan aturan jam presensi"
+                  description="Jika aktif, sistem menilai check-in terlambat dan check-out lewat jam."
+                  checked={settings.attendance.scheduleEnabled}
+                  onChange={(checked) => updateSection('attendance', {
+                    scheduleEnabled: checked,
+                    scheduleMode: checked ? settings.attendance.scheduleMode : 'free',
+                  })}
+                />
+                <SelectField
+                  label="Mode jadwal"
+                  value={settings.attendance.scheduleMode}
+                  onChange={(value) => updateSection('attendance', { scheduleMode: value })}
+                  disabled={!settings.attendance.scheduleEnabled}
+                >
+                  <option value="free">Bebas</option>
+                  <option value="office_hours">Jam kantor global</option>
+                  <option value="shift">Karyawan pilih shift</option>
+                </SelectField>
+                {settings.attendance.scheduleMode === 'office_hours' && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <TimeField
+                      label="Check-in mulai"
+                      value={settings.attendance.officeCheckInStart}
+                      onChange={(value) => updateSection('attendance', { officeCheckInStart: value })}
+                    />
+                    <TimeField
+                      label="Telat setelah"
+                      value={settings.attendance.officeLateAfter}
+                      onChange={(value) => updateSection('attendance', { officeLateAfter: value })}
+                    />
+                    <TimeField
+                      label="Check-in ditutup"
+                      value={settings.attendance.officeCheckInEnd}
+                      onChange={(value) => updateSection('attendance', { officeCheckInEnd: value })}
+                    />
+                    <TimeField
+                      label="Check-out mulai"
+                      value={settings.attendance.officeCheckOutStart}
+                      onChange={(value) => updateSection('attendance', { officeCheckOutStart: value })}
+                    />
+                    <TimeField
+                      label="Check-out normal sampai"
+                      value={settings.attendance.officeCheckOutEnd}
+                      onChange={(value) => updateSection('attendance', { officeCheckOutEnd: value })}
+                    />
+                  </div>
+                )}
+                {settings.attendance.scheduleMode === 'shift' && (
+                  <ToggleRow
+                    title="Wajib pilih shift sebelum presensi"
+                    description="Shift akan dikunci setelah karyawan berhasil check-in."
+                    checked={settings.attendance.requireShiftSelection}
+                    onChange={(checked) => updateSection('attendance', { requireShiftSelection: checked })}
+                  />
+                )}
               </SettingsPanel>
 
               <SettingsPanel
@@ -276,7 +437,7 @@ export default function PengaturanPage() {
                   title="Wajib liveness blink"
                   description="Karyawan wajib berkedip saat validasi wajah."
                   checked={settings.faceSecurity.requiresBlink}
-                  onChange={(checked) => updateSection('faceSecurity', { requiresBlink: checked })}
+                  onChange={handleBlinkToggle}
                 />
                 <ToggleRow
                   title="Admin boleh lihat foto bukti"
@@ -285,33 +446,84 @@ export default function PengaturanPage() {
                   onChange={(checked) => updateSection('faceSecurity', { showEvidencePhotoToAdmin: checked })}
                 />
               </SettingsPanel>
+
+              <SettingsPanel
+                icon={Clock3}
+                tone="blue"
+                title="Daftar Shift Kerja"
+                description="Shift aktif akan menjadi pilihan karyawan sebelum presensi saat mode shift digunakan."
+              >
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
+                  <TextField
+                    label="Nama shift"
+                    value={shiftForm.name}
+                    onChange={(value) => setShiftForm((current) => ({ ...current, name: value }))}
+                  />
+                  <ToggleRow
+                    title="Lewat tengah malam"
+                    description="Untuk shift malam, misalnya 22:00 sampai 06:00."
+                    checked={shiftForm.crosses_midnight}
+                    onChange={(checked) => setShiftForm((current) => ({ ...current, crosses_midnight: checked }))}
+                  />
+                  <TimeField
+                    label="Check-in mulai"
+                    value={shiftForm.check_in_start}
+                    onChange={(value) => setShiftForm((current) => ({ ...current, check_in_start: value }))}
+                  />
+                  <TimeField
+                    label="Telat setelah"
+                    value={shiftForm.late_after}
+                    onChange={(value) => setShiftForm((current) => ({ ...current, late_after: value }))}
+                  />
+                  <TimeField
+                    label="Check-in ditutup"
+                    value={shiftForm.check_in_end}
+                    onChange={(value) => setShiftForm((current) => ({ ...current, check_in_end: value }))}
+                  />
+                  <TimeField
+                    label="Check-out mulai"
+                    value={shiftForm.check_out_start}
+                    onChange={(value) => setShiftForm((current) => ({ ...current, check_out_start: value }))}
+                  />
+                  <TimeField
+                    label="Check-out normal sampai"
+                    value={shiftForm.check_out_end}
+                    onChange={(value) => setShiftForm((current) => ({ ...current, check_out_end: value }))}
+                  />
+                  <div className="flex items-end">
+                    <Button
+                      type="button"
+                      onClick={handleCreateShift}
+                      isLoading={savingShiftId === 'new'}
+                      className="w-full gap-2"
+                    >
+                      <Plus size={16} />
+                      Tambah Shift
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {shifts.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm font-semibold text-slate-500">
+                      Belum ada shift kerja.
+                    </div>
+                  ) : shifts.map((shift) => (
+                    <ShiftRow
+                      key={shift.id}
+                      shift={shift}
+                      isSaving={savingShiftId === shift.id}
+                      onChange={(patch) => handleUpdateShift(shift.id, patch)}
+                      onDeactivate={() => handleDeactivateShift(shift.id)}
+                    />
+                  ))}
+                </div>
+              </SettingsPanel>
             </div>
           </div>
         </div>
 
         <aside className="space-y-4">
-          <SettingsPanel
-            icon={Database}
-            tone="rose"
-            title="Sumber Data"
-            description="Pilih apakah dashboard membaca database asli atau data sementara."
-          >
-            <ToggleRow
-              title="Gunakan database Supabase"
-              description={settings.dashboard.dataSource === 'supabase'
-                ? 'Dashboard sedang diarahkan ke data asli dari database.'
-                : 'Dashboard sedang memakai data sementara untuk pengembangan.'}
-              checked={settings.dashboard.dataSource === 'supabase'}
-              onChange={(checked) => updateSection('dashboard', { dataSource: checked ? 'supabase' : 'mock' })}
-            />
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs font-bold text-slate-500">Mode aktif</p>
-              <p className="mt-1 text-sm font-bold text-slate-900">
-                {settings.dashboard.dataSource === 'supabase' ? 'Database Supabase' : 'Data sementara'}
-              </p>
-            </div>
-          </SettingsPanel>
-
           <SettingsPanel
             icon={UserCog}
             tone="slate"
@@ -339,11 +551,11 @@ export default function PengaturanPage() {
               </div>
               <div>
                 <p className="font-bold text-slate-900">Status Konfigurasi</p>
-                <p className="text-xs text-slate-500">Backend in-memory tahap awal</p>
+                <p className="text-xs text-slate-500">Tersimpan di database Supabase</p>
               </div>
             </div>
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              Blueprint menyarankan tabel `app_settings` jika pengaturan makin banyak. Untuk tahap ini disimpan di backend agar UI dan alur admin sudah siap.
+              Pengaturan global disimpan di tabel `app_settings`. Mobile app membaca liveness blink langsung dari database.
             </p>
           </div>
         </aside>
@@ -358,6 +570,7 @@ function SettingStat({ title, value, icon: Icon, tone }) {
     emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
     amber: 'border-amber-100 bg-amber-50 text-amber-700',
     violet: 'border-violet-100 bg-violet-50 text-violet-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
   };
 
   return (
@@ -409,6 +622,36 @@ function TextField({ label, value, onChange }) {
       <span className="mb-1.5 block text-xs font-bold text-slate-600">{label}</span>
       <input
         value={value || ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+      />
+    </label>
+  );
+}
+
+function SelectField({ label, value, onChange, disabled = false, children }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-bold text-slate-600">{label}</span>
+      <select
+        value={value || ''}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function TimeField({ label, value, onChange }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-bold text-slate-600">{label}</span>
+      <input
+        type="time"
+        value={(value || '').slice(0, 5)}
         onChange={(event) => onChange(event.target.value)}
         className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
       />
@@ -472,6 +715,80 @@ function ToggleRow({ title, description, checked, onChange }) {
       </button>
     </div>
   );
+}
+
+function ShiftRow({ shift, isSaving, onChange, onDeactivate }) {
+  return (
+    <div className={`rounded-xl border p-3 ${
+      shift.is_active ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50 opacity-70'
+    }`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-slate-900">{shift.name}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {shift.is_active ? 'Aktif' : 'Nonaktif'} · {shift.crosses_midnight ? 'Lewat tengah malam' : 'Hari yang sama'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDeactivate}
+          disabled={!shift.is_active || isSaving}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-100 bg-rose-50 text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+          title="Nonaktifkan shift"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <TextField
+          label="Nama shift"
+          value={shift.name}
+          onChange={(value) => onChange({ name: value })}
+        />
+        <TimeField
+          label="Check-in mulai"
+          value={shift.check_in_start}
+          onChange={(value) => onChange({ check_in_start: value })}
+        />
+        <TimeField
+          label="Telat setelah"
+          value={shift.late_after}
+          onChange={(value) => onChange({ late_after: value })}
+        />
+        <TimeField
+          label="Check-in ditutup"
+          value={shift.check_in_end}
+          onChange={(value) => onChange({ check_in_end: value })}
+        />
+        <TimeField
+          label="Check-out mulai"
+          value={shift.check_out_start}
+          onChange={(value) => onChange({ check_out_start: value })}
+        />
+        <TimeField
+          label="Check-out normal sampai"
+          value={shift.check_out_end}
+          onChange={(value) => onChange({ check_out_end: value })}
+        />
+      </div>
+
+      <div className="mt-3">
+        <ToggleRow
+          title="Lewat tengah malam"
+          description="Aktifkan untuk shift malam yang pulangnya di tanggal berikutnya."
+          checked={shift.crosses_midnight}
+          onChange={(checked) => onChange({ crosses_midnight: checked })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function scheduleModeLabel(value) {
+  if (value === 'office_hours') return 'Jam Kantor';
+  if (value === 'shift') return 'Shift';
+  return 'Bebas';
 }
 
 function mergeSettings(base, value) {

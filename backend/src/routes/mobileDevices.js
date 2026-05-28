@@ -32,23 +32,54 @@ router.post('/heartbeat', async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('active_device_id')
+      .eq('id', employeeId)
+      .single();
+
+    if (profileError) throw profileError;
+
+    if (!profile?.active_device_id || profile.active_device_id !== deviceId) {
+      return res.status(403).json({ success: false, message: 'Akses device ini sudah dicabut oleh admin.' });
+    }
+
+    const { data: existingDevice, error: findError } = await supabaseAdmin
       .from('user_devices')
-      .update({
-        device_name: deviceName,
-        platform,
-        app_version: appVersion,
-        is_active: true,
-        last_seen_at: new Date().toISOString(),
-      })
+      .select('id, is_active')
       .eq('employee_id', employeeId)
       .eq('device_id', deviceId)
+      .maybeSingle();
+
+    if (findError) throw findError;
+
+    if (existingDevice && !existingDevice.is_active) {
+      return res.status(403).json({ success: false, message: 'Akses device ini sudah dicabut oleh admin.' });
+    }
+
+    const heartbeatPayload = {
+      employee_id: employeeId,
+      device_id: deviceId,
+      device_name: deviceName || 'Presensia Device',
+      platform: platform || 'unknown',
+      app_version: appVersion || '1.0.0',
+      is_active: true,
+      bound_via: 'qr_login',
+      last_seen_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('user_devices')
+      .upsert(heartbeatPayload, { onConflict: 'employee_id,device_id' })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.warn('[Mobile Device Heartbeat Warning]', error);
+      return res.json({ success: true, data: heartbeatPayload, device_persisted: false });
+    }
 
-    return res.json({ success: true, data });
+    return res.json({ success: true, data, device_persisted: true });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }

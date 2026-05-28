@@ -1,12 +1,26 @@
 const express = require('express');
 const supabaseAdmin = require('../lib/supabaseAdmin');
-const mockStore = require('../lib/attendanceMockStore');
 
 const router = express.Router();
 
-function normalizeSupabaseRecord(row) {
+async function createEvidenceSignedUrl(path) {
+  if (!path) return null;
+  const { data, error } = await supabaseAdmin.storage
+    .from('attendance-evidence')
+    .createSignedUrl(path, 60 * 10);
+  if (error) {
+    console.warn('[Attendance Evidence Signed URL Warning]', error);
+    return null;
+  }
+  return data?.signedUrl || null;
+}
+
+async function normalizeSupabaseRecord(row) {
   const profile = row.profiles || {};
   const office = row.office_locations || {};
+  const evidenceInPath = row.evidence_photo_in_path || row.evidence_photo_path || null;
+  const evidenceOutPath = row.evidence_photo_out_path || null;
+  const evidencePath = evidenceOutPath || evidenceInPath;
 
   return {
     id: row.id,
@@ -28,7 +42,12 @@ function normalizeSupabaseRecord(row) {
     distance_from_office_meters: row.distance_from_office_meters,
     face_similarity: row.face_similarity,
     face_threshold: row.face_threshold,
-    evidence_photo_url: row.evidence_photo_path || null,
+    evidence_photo_path: evidencePath,
+    evidence_photo_in_path: evidenceInPath,
+    evidence_photo_out_path: evidenceOutPath,
+    evidence_photo_url: await createEvidenceSignedUrl(evidencePath),
+    evidence_photo_in_url: await createEvidenceSignedUrl(evidenceInPath),
+    evidence_photo_out_url: await createEvidenceSignedUrl(evidenceOutPath),
     status: row.status || 'present',
     source: row.source || 'manual',
   };
@@ -67,6 +86,8 @@ async function listFromSupabase() {
       face_similarity,
       face_threshold,
       evidence_photo_path,
+      evidence_photo_in_path,
+      evidence_photo_out_path,
       profiles:employee_id (
         full_name,
         email,
@@ -82,18 +103,14 @@ async function listFromSupabase() {
     .order('check_in', { ascending: false });
 
   if (error) throw error;
-  return (data || []).map(normalizeSupabaseRecord);
+  return Promise.all((data || []).map(normalizeSupabaseRecord));
 }
 
 router.get('/', async (req, res) => {
   if (!supabaseAdmin) {
-    return res.json({
-      success: true,
-      data: {
-        source: 'mock',
-        records: mockStore.listAttendance(),
-        summary: mockStore.getSummary(),
-      },
+    return res.status(503).json({
+      success: false,
+      message: 'Supabase backend belum dikonfigurasi.',
     });
   }
 
@@ -109,16 +126,11 @@ router.get('/', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[Attendance GET Fallback]', err);
-
-    return res.json({
-      success: true,
-      data: {
-        source: 'mock',
-        fallbackReason: 'Gagal membaca Supabase, memakai data mock.',
-        records: mockStore.listAttendance(),
-        summary: mockStore.getSummary(),
-      },
+    console.error('[Attendance GET Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal membaca data presensi dari Supabase.',
+      error: err.message,
     });
   }
 });

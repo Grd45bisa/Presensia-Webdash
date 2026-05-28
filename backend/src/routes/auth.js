@@ -1,13 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 const supabaseAdmin = require('../lib/supabaseAdmin');
 const qrMockStore = require('../lib/qrLoginMockStore');
 const deviceMockStore = require('../lib/deviceMockStore');
 
+function createOtpExchangeClient() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    }
+  );
+}
+
 // ─── POST /api/auth/qr-login ────────────────────────────────────────────────
 // Fungsi: Publik login untuk karyawan via scan QR Code dari handphone
 router.post('/qr-login', async (req, res) => {
+  const startedAt = Date.now();
   const { token, device_id, device_name, platform, app_version } = req.body;
 
   if (!token || !device_id) {
@@ -95,54 +111,9 @@ router.post('/qr-login', async (req, res) => {
         message: 'Akses ditolak. Akun Admin wajib masuk menggunakan email dan password.'
       });
     }
+    console.log(`[QR Login] token/profile valid ${Date.now() - startedAt}ms`);
 
-    // 4. Update status token menjadi 'used' di database
-    const { error: updateTokenError } = await supabaseAdmin
-      .from('qr_login_tokens')
-      .update({
-        status: 'used',
-        used_at: new Date().toISOString(),
-        used_device_id: device_id
-      })
-      .eq('id', tokenRecord.id);
-
-    if (updateTokenError) throw updateTokenError;
-
-    // 5. Daftarkan / update device HP karyawan ke tabel user_devices
-    await supabaseAdmin
-      .from('user_devices')
-      .update({ is_active: false })
-      .eq('employee_id', employeeId);
-
-    const { error: deviceError } = await supabaseAdmin
-      .from('user_devices')
-      .upsert({
-        employee_id: employeeId,
-        device_id: device_id,
-        device_name: device_name || 'Generic Device',
-        platform: platform || 'unknown',
-        app_version: app_version || '1.0.0',
-        is_active: true,
-        bound_via: 'qr_login',
-        last_seen_at: new Date().toISOString()
-      }, {
-        onConflict: 'employee_id,device_id'
-      });
-
-    if (deviceError) throw deviceError;
-
-    // 6. Kunci device aktif karyawan di tabel profiles
-    const { error: updateProfileError } = await supabaseAdmin
-      .from('profiles')
-      .update({
-        active_device_id: device_id,
-        device_bound_at: new Date().toISOString()
-      })
-      .eq('id', employeeId);
-
-    if (updateProfileError) throw updateProfileError;
-
-    // 7. Generate session token Supabase menggunakan link sekali pakai (OTP / Magic Link)
+    // 4. Generate session token Supabase menggunakan link sekali pakai (OTP / Magic Link)
     //    atau langsung generate token link login untuk user bersangkutan.
     //    Karena Supabase admin auth tidak langsung men-sign-in tanpa email/pass,
     //    kita gunakan Admin API untuk generate Magic Link, lalu kirim access_token-nya ke mobile app.
@@ -162,17 +133,24 @@ router.post('/qr-login', async (req, res) => {
         message: 'Gagal membuat sesi masuk otomatis.'
       });
     }
+    console.log(`[QR Login] magic link generated ${Date.now() - startedAt}ms`);
 
-    // Ambil hashed token / access token dari properti payload url
-    const parsedUrl = new URL(otpData.properties.action_link);
-    const tokenHashFromUrl = parsedUrl.searchParams.get('token');
-    const typeFromUrl = parsedUrl.searchParams.get('type');
+    const otpTokenHash = otpData.properties?.hashed_token;
+    const otpType = otpData.properties?.verification_type || 'magiclink';
 
-    // 8. Verifikasi OTP token langsung di backend untuk mengambil Session asli (access_token & refresh_token)
-    const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.verifyOtp({
-      email: profile.email,
-      token: tokenHashFromUrl,
-      type: typeFromUrl
+    if (!otpTokenHash) {
+      console.error('[Supabase OTP Link Error] hashed_token kosong', otpData.properties);
+      return res.status(500).json({
+        success: false,
+        message: 'Gagal membuat token sesi masuk otomatis.'
+      });
+    }
+
+    // 5. Verifikasi OTP token langsung di backend untuk mengambil Session asli (access_token & refresh_token)
+    const otpExchangeClient = createOtpExchangeClient();
+    const { data: sessionData, error: sessionError } = await otpExchangeClient.auth.verifyOtp({
+      token_hash: otpTokenHash,
+      type: otpType
     });
 
     if (sessionError || !sessionData.session) {
@@ -182,8 +160,69 @@ router.post('/qr-login', async (req, res) => {
         message: 'Gagal menukarkan kode sesi.'
       });
     }
+    console.log(`[QR Login] session verified ${Date.now() - startedAt}ms`);
+
+    // 6. Setelah session valid, baru tandai QR terpakai.
+    const { error: updateTokenError } = await supabaseAdmin
+      .from('qr_login_tokens')
+      .update({
+        status: 'used',
+        used_at: new Date().toISOString(),
+        used_device_id: device_id
+      })
+      .eq('id', tokenRecord.id)
+      .eq('status', 'active');
+
+    if (updateTokenError) throw updateTokenError;
+    console.log(`[QR Login] token marked used ${Date.now() - startedAt}ms`);
+
+    // 7. Daftarkan device sebagai best-effort. Login tidak boleh gagal hanya karena policy device belum siap.
+    let deviceBindingStatus = 'saved';
+    try {
+      await supabaseAdmin
+        .from('user_devices')
+        .update({ is_active: false })
+        .eq('employee_id', employeeId);
+
+      const { error: deviceError } = await supabaseAdmin
+        .from('user_devices')
+        .upsert({
+          employee_id: employeeId,
+          device_id: device_id,
+          device_name: device_name || 'Generic Device',
+          platform: platform || 'unknown',
+          app_version: app_version || '1.0.0',
+          is_active: true,
+          bound_via: 'qr_login',
+          last_seen_at: new Date().toISOString()
+        }, {
+          onConflict: 'employee_id,device_id'
+        });
+
+      if (deviceError) throw deviceError;
+    } catch (deviceError) {
+      deviceBindingStatus = 'skipped';
+      console.warn('[QR Login Device Binding Warning]', deviceError);
+    }
+
+    // 8. Kunci device aktif karyawan di profiles sebagai best-effort.
+    try {
+      const { error: updateProfileError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          active_device_id: device_id,
+          device_bound_at: new Date().toISOString()
+        })
+        .eq('id', employeeId);
+
+      if (updateProfileError) throw updateProfileError;
+    } catch (profileDeviceError) {
+      deviceBindingStatus = 'skipped';
+      console.warn('[QR Login Profile Device Warning]', profileDeviceError);
+    }
 
     // 9. Kirim data session Supabase asli ke Mobile App agar langsung login!
+    console.log(`[QR Login] success ${Date.now() - startedAt}ms`);
     return res.json({
       success: true,
       message: 'QR Login sukses. Sesi berhasil dibuat.',
@@ -192,7 +231,10 @@ router.post('/qr-login', async (req, res) => {
         refresh_token: sessionData.session.refresh_token,
         expires_in: sessionData.session.expires_in,
         user: sessionData.user
-      }
+      },
+      data: {
+        device_binding_status: deviceBindingStatus
+      },
     });
 
   } catch (err) {

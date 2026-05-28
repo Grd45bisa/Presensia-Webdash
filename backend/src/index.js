@@ -26,9 +26,22 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
 ].filter(Boolean);
 
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+
+  try {
+    const { hostname, protocol } = new URL(origin);
+    const isLocalDevHost = hostname === 'localhost' || hostname === '127.0.0.1';
+    return process.env.NODE_ENV !== 'production' && protocol === 'http:' && isLocalDevHost;
+  } catch {
+    return false;
+  }
+}
+
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
 

@@ -16,7 +16,6 @@ import {
   MoreVertical,
   QrCode,
   RefreshCw,
-  ShieldAlert,
   UserRoundCheck,
   Users,
 } from 'lucide-react';
@@ -31,118 +30,22 @@ import {
   YAxis,
 } from 'recharts';
 import { Badge } from '@/components/ui/Badge';
-import { getDashboardData, getDashboardSourceSetting, getGlobalSettings } from '@/lib/api/client';
+import { getDashboardData } from '@/lib/api/client';
 
-const fallbackDashboardData = {
-  source: 'mock',
-  fallbackReason: 'Memakai data bawaan frontend.',
+const emptyDashboardData = {
+  source: 'supabase',
   pagination: {
-    from: 1,
-    to: 7,
-    total: 7,
+    from: 0,
+    to: 0,
+    total: 0,
     currentPage: 1,
-    lastPage: 2,
+    lastPage: 1,
   },
-  summaryCards: [
-    { title: 'Total Karyawan', value: '128', detail: '128 akun aktif', color: 'blue', icon: 'users' },
-    { title: 'Hadir Hari Ini', value: '96', detail: '75,00% dari total', color: 'emerald', icon: 'userRoundCheck' },
-    { title: 'Belum Presensi', value: '32', detail: '25,00% dari total', color: 'amber', icon: 'clock' },
-    { title: 'Di Luar Geofence', value: '5', detail: '3,91% perlu ditinjau', color: 'rose', icon: 'mapPin' },
-    { title: 'Indikasi Fake GPS', value: '2', detail: '1,56% risiko tinggi', color: 'red', icon: 'locateFixed' },
-  ],
-  trendData: [
-    82, 75, 88, 86, 78, 84, 90, 87, 85, 88, 91, 84, 80, 82, 86, 88, 83, 74, 85, 78, 90,
-  ].map((rate, index) => {
-    const total = 128;
-    const hadir = Math.round((rate / 100) * total);
-
-    return {
-      day: index + 1,
-      date: `${String(index + 1).padStart(2, '0')} Mei 2026`,
-      hadir,
-      belumPresensi: total - hadir,
-      tingkatKehadiran: rate,
-    };
-  }),
-  latestAttendance: [
-    { name: 'Budi Santoso', role: 'Developer', time: '08:45', score: '96.4%', status: 'Hadir' },
-    { name: 'Siti Rahmawati', role: 'Marketing', time: '08:42', score: '94.1%', status: 'Hadir' },
-    { name: 'Andi Wijaya', role: 'Sales Executive', time: '08:40', score: '92.7%', status: 'Hadir' },
-    { name: 'Dewi Lestari', role: 'HR Generalist', time: '08:37', score: '95.8%', status: 'Hadir' },
-    { name: 'Rizky Pratama', role: 'Field Engineer', time: '08:35', score: '91.3%', status: 'Lapangan' },
-  ],
-  tableRows: [
-    {
-      name: 'Budi Santoso',
-      type: 'office',
-      checkIn: '08:45',
-      checkOut: '-',
-      location: 'Kantor Pusat - Jakarta',
-      geofence: 'inside',
-      score: '96.4%',
-      status: 'Belum Check-out',
-    },
-    {
-      name: 'Siti Rahmawati',
-      type: 'office',
-      checkIn: '08:42',
-      checkOut: '17:30',
-      location: 'Kantor Pusat - Jakarta',
-      geofence: 'inside',
-      score: '94.1%',
-      status: 'Selesai',
-    },
-    {
-      name: 'Andi Wijaya',
-      type: 'office',
-      checkIn: '08:40',
-      checkOut: '17:28',
-      location: 'Kantor Pusat - Jakarta',
-      geofence: 'inside',
-      score: '92.7%',
-      status: 'Selesai',
-    },
-    {
-      name: 'Dewi Lestari',
-      type: 'remote',
-      checkIn: '09:02',
-      checkOut: '-',
-      location: 'Remote - Bekasi',
-      geofence: 'inside',
-      score: '95.8%',
-      status: 'Belum Check-out',
-    },
-    {
-      name: 'Rizky Pratama',
-      type: 'field',
-      checkIn: '07:58',
-      checkOut: '-',
-      location: 'Site Project - Bandung',
-      geofence: 'outside',
-      score: '91.3%',
-      status: 'Belum Check-out',
-    },
-    {
-      name: 'Fajar Nugroho',
-      type: 'office',
-      checkIn: '08:55',
-      checkOut: '17:12',
-      location: 'Kantor Pusat - Jakarta',
-      geofence: 'inside',
-      score: '93.6%',
-      status: 'Selesai',
-    },
-    {
-      name: 'Nurul Aini',
-      type: 'remote',
-      checkIn: '09:10',
-      checkOut: '-',
-      location: 'Remote - Yogyakarta',
-      geofence: 'inside',
-      score: '94.2%',
-      status: 'Belum Check-out',
-    },
-  ],
+  summaryCards: [],
+  trendData: [],
+  latestAttendance: [],
+  tableRows: [],
+  primaryOffice: null,
 };
 
 const typeLabel = {
@@ -169,8 +72,7 @@ const cardRoutes = {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [dashboardData, setDashboardData] = useState(fallbackDashboardData);
-  const [sourceMode, setSourceMode] = useState('mock');
+  const [dashboardData, setDashboardData] = useState(emptyDashboardData);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [page, setPage] = useState(1);
@@ -181,16 +83,13 @@ export default function DashboardPage() {
     setStatusMessage('');
 
     try {
-      const source = await resolveDashboardSource();
-      const data = await getDashboardData(source);
+      const data = await getDashboardData('supabase');
 
       setDashboardData(data);
-      setSourceMode(data.source || source);
       setErrorMessage('');
       setPage(1);
     } catch (err) {
-      setDashboardData(fallbackDashboardData);
-      setSourceMode('mock');
+      setDashboardData(emptyDashboardData);
       setErrorMessage(err.message);
       setPage(1);
     } finally {
@@ -240,12 +139,14 @@ export default function DashboardPage() {
     downloadCsv(
       'ringkasan-presensi-dashboard.csv',
       [
-        ['Nama', 'Tipe User', 'Check-in', 'Check-out', 'Lokasi', 'Geofence', 'Skor Wajah', 'Status'],
+        ['Nama', 'Tipe User', 'Check-in', 'Check-out', 'Jam Kerja', 'Status Telat', 'Lokasi', 'Geofence', 'Skor Wajah', 'Status'],
         ...rows.map((row) => [
           row.name,
           typeLabel[row.type] || row.type,
           row.checkIn,
           row.checkOut,
+          row.workDuration || '-',
+          row.lateStatus || 'Tepat waktu',
           row.location,
           row.geofence,
           row.score,
@@ -301,7 +202,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 sm:gap-3 sm:p-5 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 sm:gap-3 sm:p-5 xl:grid-cols-3">
           <SourcePill
             icon={CalendarDays}
             label="Periode"
@@ -312,18 +213,10 @@ export default function DashboardPage() {
           <SourcePill
             icon={Building2}
             label="Lokasi utama"
-            value="Islamic Raya"
-            detail="Geofence aktif"
+            value={dashboardData.primaryOffice?.name || 'Belum ada lokasi'}
+            detail={dashboardData.primaryOffice ? 'Geofence aktif' : 'Tambahkan lokasi kantor'}
             tone="emerald"
             onClick={() => navigate('/lokasi-kantor')}
-          />
-          <SourcePill
-            icon={ShieldAlert}
-            label="Sumber data"
-            value={sourceMode === 'supabase' ? 'Database Supabase' : 'Data sementara'}
-            detail={dashboardData.fallbackReason || 'Terhubung dari pengaturan global'}
-            tone={sourceMode === 'supabase' ? 'emerald' : 'amber'}
-            onClick={() => navigate('/pengaturan')}
           />
           <SourcePill
             icon={Users}
@@ -336,13 +229,13 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {(isLoading || errorMessage || statusMessage || dashboardData.fallbackReason) && (
+      {(isLoading || errorMessage || statusMessage) && (
         <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">
           {isLoading
             ? 'Mengambil data dashboard dari backend...'
             : errorMessage
-              ? `Backend belum tersedia, memakai data sementara. ${errorMessage}`
-              : statusMessage || `Sumber data: ${sourceMode}. ${dashboardData.fallbackReason || ''}`}
+              ? `Gagal mengambil data Supabase. ${errorMessage}`
+              : statusMessage || 'Data dashboard diperbarui.'}
         </div>
       )}
 
@@ -392,16 +285,6 @@ export default function DashboardPage() {
       </section>
     </div>
   );
-}
-
-async function resolveDashboardSource() {
-  try {
-    const settings = await getGlobalSettings();
-    return settings?.dashboard?.dataSource || 'mock';
-  } catch {
-    const oldSetting = await getDashboardSourceSetting();
-    return oldSetting?.dashboardDataSource || 'mock';
-  }
 }
 
 function ActionButton({ children, icon: Icon, onClick, loading = false, hideOnSmall = false }) {
@@ -830,6 +713,7 @@ function AttendanceTable({
               <th className="px-5 py-3">Tipe User</th>
               <th className="px-5 py-3">Check-in</th>
               <th className="px-5 py-3">Check-out</th>
+              <th className="px-5 py-3">Jam Kerja</th>
               <th className="px-5 py-3">Lokasi</th>
               <th className="px-5 py-3">Geofence</th>
               <th className="px-5 py-3">Skor Wajah</th>
@@ -855,6 +739,14 @@ function AttendanceTable({
                 </td>
                 <td className="px-5 py-3 font-medium text-slate-700">{row.checkIn}</td>
                 <td className="px-5 py-3 font-medium text-slate-700">{row.checkOut}</td>
+                <td className="px-5 py-3">
+                  <p className="font-bold text-slate-700">{row.workDuration || '-'}</p>
+                  <p className={`mt-0.5 text-[10px] font-bold uppercase ${
+                    String(row.lateStatus || '').startsWith('Terlambat') ? 'text-amber-600' : 'text-emerald-600'
+                  }`}>
+                    {row.lateStatus || 'Tepat waktu'}
+                  </p>
+                </td>
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-2 font-medium text-slate-700">
                     <MapPin size={17} className={row.type === 'remote' ? 'text-blue-500' : 'text-blue-600'} />
@@ -907,6 +799,9 @@ function AttendanceTable({
                 </div>
                 <p className="mt-1 text-sm font-medium text-slate-500">
                   {row.checkIn} - {row.checkOut} · {row.location}
+                </p>
+                <p className="mt-1 text-xs font-bold text-slate-500">
+                  Jam kerja {row.workDuration || '-'} · {row.lateStatus || 'Tepat waktu'}
                 </p>
               </div>
             </div>

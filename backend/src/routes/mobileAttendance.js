@@ -5,6 +5,109 @@ const officeStore = require('../lib/officeMockStore');
 
 const router = express.Router();
 
+const defaultScheduleSettings = {
+  scheduleEnabled: false,
+  scheduleMode: 'free',
+  officeCheckInStart: '07:30',
+  officeCheckInEnd: '08:15',
+  officeLateAfter: '08:00',
+  officeCheckOutStart: '17:00',
+  officeCheckOutEnd: '18:00',
+  requireShiftSelection: true,
+};
+
+function normalizeShift(row = {}) {
+  return {
+    id: row.id,
+    name: row.name || 'Shift',
+    check_in_start: (row.check_in_start || '07:30').slice(0, 5),
+    check_in_end: (row.check_in_end || '08:15').slice(0, 5),
+    late_after: (row.late_after || '08:00').slice(0, 5),
+    check_out_start: (row.check_out_start || '17:00').slice(0, 5),
+    check_out_end: (row.check_out_end || '18:00').slice(0, 5),
+    crosses_midnight: Boolean(row.crosses_midnight),
+    is_active: Boolean(row.is_active ?? true),
+  };
+}
+
+async function loadScheduleConfig() {
+  if (!supabaseAdmin) {
+    return {
+      schedule: defaultScheduleSettings,
+      shifts: [],
+    };
+  }
+
+  const { data: settingsRow, error: settingsError } = await supabaseAdmin
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'global')
+    .maybeSingle();
+
+  if (settingsError) throw settingsError;
+
+  const schedule = {
+    ...defaultScheduleSettings,
+    ...(settingsRow?.value?.attendance || {}),
+  };
+
+  const { data: shifts, error: shiftsError } = await supabaseAdmin
+    .from('work_shifts')
+    .select('*')
+    .eq('is_active', true)
+    .order('name', { ascending: true });
+
+  if (shiftsError) throw shiftsError;
+
+  return {
+    schedule,
+    shifts: (shifts || []).map(normalizeShift),
+  };
+}
+
+function timeToMinutes(value) {
+  const [hour, minute] = String(value || '00:00').split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function normalizeForWindow(value, start, crossesMidnight) {
+  if (!crossesMidnight) return value;
+  return value < start ? value + 1440 : value;
+}
+
+function evaluateCheckIn(rule, nowMinutes) {
+  const start = timeToMinutes(rule.check_in_start);
+  const end = normalizeForWindow(timeToMinutes(rule.check_in_end), start, rule.crosses_midnight);
+  const lateAfter = normalizeForWindow(timeToMinutes(rule.late_after), start, rule.crosses_midnight);
+  const current = normalizeForWindow(nowMinutes, start, rule.crosses_midnight);
+  const lateMinutes = Math.max(0, current - lateAfter);
+
+  return {
+    allowed: current >= start && current <= end,
+    schedule_status: lateMinutes > 0 ? 'late' : 'present',
+    late_minutes: lateMinutes,
+    message: lateMinutes > 0
+      ? `Check-in terlambat ${lateMinutes} menit.`
+      : 'Check-in sesuai jadwal.',
+  };
+}
+
+function evaluateCheckOut(rule, nowMinutes) {
+  const start = timeToMinutes(rule.check_out_start);
+  const end = normalizeForWindow(timeToMinutes(rule.check_out_end), start, rule.crosses_midnight);
+  const current = normalizeForWindow(nowMinutes, start, rule.crosses_midnight);
+  const afterNormalWindow = current > end;
+
+  return {
+    allowed: current >= start,
+    schedule_status: afterNormalWindow ? 'checkout_late_prompt' : 'present',
+    requires_checkout_reason: afterNormalWindow,
+    message: afterNormalWindow
+      ? 'Check-out melewati jam normal. Tanyakan apakah karyawan lembur atau lupa absen pulang.'
+      : 'Check-out sesuai jadwal.',
+  };
+}
+
 function distanceInMeters(from, to) {
   const earthRadius = 6371000;
   const toRadians = (value) => (Number(value) * Math.PI) / 180;
@@ -159,6 +262,88 @@ router.post('/validate-geofence', async (req, res, next) => {
     const validation = buildValidation(employee, office, point);
 
     return res.json({ success: true, source: 'mock', validation });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/schedule-config', async (req, res, next) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.json({
+        success: true,
+        data: {
+          schedule: defaultScheduleSettings,
+          shifts: [],
+        },
+      });
+    }
+
+    const data = await loadScheduleConfig();
+    return res.json({ success: true, data });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/validate-schedule', async (req, res, next) => {
+  try {
+    const {
+      action = 'check-in',
+      shift_id: shiftId,
+      timestamp,
+    } = req.body || {};
+
+    const { schedule, shifts } = await loadScheduleConfig();
+    const now = timestamp ? new Date(timestamp) : new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    if (!schedule.scheduleEnabled || schedule.scheduleMode === 'free') {
+      return res.json({
+        success: true,
+        data: {
+          allowed: true,
+          schedule_mode: 'free',
+          schedule_status: 'present',
+          late_minutes: 0,
+          requires_checkout_reason: false,
+          message: 'Aturan jam presensi sedang nonaktif.',
+        },
+      });
+    }
+
+    let rule = {
+      check_in_start: schedule.officeCheckInStart,
+      check_in_end: schedule.officeCheckInEnd,
+      late_after: schedule.officeLateAfter,
+      check_out_start: schedule.officeCheckOutStart,
+      check_out_end: schedule.officeCheckOutEnd,
+      crosses_midnight: false,
+    };
+
+    if (schedule.scheduleMode === 'shift') {
+      const shift = shifts.find((item) => item.id === shiftId);
+      if (!shift) {
+        return res.status(400).json({
+          success: false,
+          message: 'Pilih shift kerja aktif sebelum presensi.',
+        });
+      }
+      rule = shift;
+    }
+
+    const result = action === 'check-out'
+      ? evaluateCheckOut(rule, nowMinutes)
+      : evaluateCheckIn(rule, nowMinutes);
+
+    return res.json({
+      success: true,
+      data: {
+        ...result,
+        schedule_mode: schedule.scheduleMode,
+        selected_shift_id: schedule.scheduleMode === 'shift' ? shiftId : null,
+      },
+    });
   } catch (err) {
     return next(err);
   }

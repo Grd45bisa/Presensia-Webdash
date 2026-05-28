@@ -1,6 +1,5 @@
 const express = require('express');
 const supabaseAdmin = require('../lib/supabaseAdmin');
-const { getMockDashboardData } = require('../lib/dashboardMock');
 
 const router = express.Router();
 
@@ -38,6 +37,28 @@ function mapGeofence(value) {
   if (value === 'inside') return 'inside';
   if (value === 'outside') return 'outside';
   return 'not_checked';
+}
+
+function formatWorkDuration(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return '-';
+  const start = new Date(checkIn);
+  const end = new Date(checkOut);
+  const diffMinutes = Math.max(0, Math.round((end - start) / 60000));
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+
+  if (hours <= 0) return `${minutes} menit`;
+  if (minutes === 0) return `${hours} jam`;
+  return `${hours} jam ${minutes} menit`;
+}
+
+function buildLateStatus(row) {
+  const lateMinutes = Number(row.late_minutes || 0);
+  if (row.schedule_status === 'late' || lateMinutes > 0 || row.status === 'late') {
+    return lateMinutes > 0 ? `Terlambat ${lateMinutes} menit` : 'Terlambat';
+  }
+
+  return 'Tepat waktu';
 }
 
 function buildSummaryCards({ totalEmployees, presentCount, outsideCount, fakeGpsCount }) {
@@ -146,6 +167,8 @@ async function getSupabaseDashboardData() {
       gps_accuracy_meters,
       distance_from_office_meters,
       face_similarity,
+      schedule_status,
+      late_minutes,
       profiles:employee_id (
         full_name,
         department,
@@ -162,6 +185,16 @@ async function getSupabaseDashboardData() {
 
   if (attendanceError) throw attendanceError;
 
+  const { data: officeRows, error: officesError } = await supabaseAdmin
+    .from('office_locations')
+    .select('id, name, is_active')
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (officesError) throw officesError;
+
+  const primaryOffice = officeRows?.[0] || null;
   const rows = records || [];
   const presentCount = rows.length;
   const outsideCount = rows.filter((row) => row.geofence_status === 'outside').length;
@@ -200,6 +233,8 @@ async function getSupabaseDashboardData() {
       location: office.name || (profile.attendance_mode === 'remote' ? 'Remote' : 'Lokasi belum diatur'),
       geofence: mapGeofence(row.geofence_status),
       score: row.face_similarity ? `${(row.face_similarity * 100).toFixed(1)}%` : '-',
+      workDuration: formatWorkDuration(row.check_in, row.check_out),
+      lateStatus: buildLateStatus(row),
       status: mapStatusLabel(row),
       avatarUrl: profile.avatar_url || null,
     };
@@ -209,6 +244,9 @@ async function getSupabaseDashboardData() {
   return {
     source: 'supabase',
     generatedAt: new Date().toISOString(),
+    primaryOffice: primaryOffice
+      ? { id: primaryOffice.id, name: primaryOffice.name, is_active: true }
+      : null,
     summaryCards,
     trendData,
     latestAttendance,
@@ -224,20 +262,10 @@ async function getSupabaseDashboardData() {
 }
 
 router.get('/', async (req, res) => {
-  const requestedSource = req.query.source || 'auto';
-
-  if (requestedSource === 'mock') {
-    return res.json({ success: true, data: getMockDashboardData() });
-  }
-
   if (!supabaseAdmin) {
-    return res.json({
-      success: true,
-      data: {
-        ...getMockDashboardData(),
-        source: 'mock',
-        fallbackReason: 'Supabase backend belum dikonfigurasi.',
-      },
+    return res.status(503).json({
+      success: false,
+      message: 'Supabase backend belum dikonfigurasi.',
     });
   }
 
@@ -245,22 +273,11 @@ router.get('/', async (req, res) => {
     const data = await getSupabaseDashboardData();
     return res.json({ success: true, data });
   } catch (err) {
-    console.error('[Dashboard Route Fallback]', err);
-
-    if (requestedSource === 'supabase') {
-      return res.status(500).json({
-        success: false,
-        message: 'Gagal mengambil data dashboard dari Supabase.',
-        error: err.message,
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        ...getMockDashboardData(),
-        fallbackReason: 'Supabase belum siap atau query gagal, memakai data mock.',
-      },
+    console.error('[Dashboard Route Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal mengambil data dashboard dari Supabase.',
+      error: err.message,
     });
   }
 });

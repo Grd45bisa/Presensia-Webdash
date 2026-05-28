@@ -84,7 +84,9 @@ export default function DevicesPage() {
   }), [enrichedDevices]);
 
   const handleRevoke = async (device) => {
-    const confirmed = window.confirm(`Cabut device ${device.device_name} dari ${device.employee_name}?`);
+    const confirmed = window.confirm(
+      `Cabut/logout paksa device ${device.device_name} dari ${device.employee_name}?\n\nMobile app pada device ini akan keluar otomatis saat heartbeat berikutnya dan user wajib QR Login ulang.`
+    );
     if (!confirmed) return;
 
     const key = `${device.employee_id}:${device.device_id}`;
@@ -97,7 +99,7 @@ export default function DevicesPage() {
           ? { ...item, is_active: false, is_current_device: false, updated_at: new Date().toISOString() }
           : item
       )));
-      setMessage('Device berhasil dicopot. User perlu QR Login ulang untuk masuk di device baru.');
+      setMessage('Device berhasil dicabut. Mobile app akan logout otomatis saat heartbeat berikutnya.');
     } catch (err) {
       setMessage(err.message);
     } finally {
@@ -106,19 +108,23 @@ export default function DevicesPage() {
   };
 
   const handleResetEmployee = async (device) => {
-    const confirmed = window.confirm(`Reset semua device milik ${device.employee_name}?`);
+    const confirmed = window.confirm(
+      `Reset user ${device.employee_name}?\n\nAksi ini akan menghapus data operasional user dari database: presensi, worklog, reminder, project, face embedding, QR token, timer, dan semua device. Akun karyawan tetap ada, tetapi user harus daftar wajah/QR Login ulang.`
+    );
     if (!confirmed) return;
+
+    const typed = window.prompt(`Ketik RESET untuk melanjutkan reset user ${device.employee_name}.`);
+    if (typed !== 'RESET') {
+      setMessage('Reset user dibatalkan.');
+      return;
+    }
 
     setBusyKey(`reset:${device.employee_id}`);
 
     try {
       await resetEmployeeDevices(device.employee_id);
-      setDevices((current) => current.map((item) => (
-        item.employee_id === device.employee_id
-          ? { ...item, is_active: false, is_current_device: false, updated_at: new Date().toISOString() }
-          : item
-      )));
-      setMessage('Semua device karyawan berhasil dicopot.');
+      setDevices((current) => current.filter((item) => item.employee_id !== device.employee_id));
+      setMessage('Data operasional user berhasil direset. User wajib QR Login ulang dan melakukan setup ulang.');
     } catch (err) {
       setMessage(err.message);
     } finally {

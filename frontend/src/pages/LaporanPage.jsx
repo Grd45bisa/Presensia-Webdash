@@ -172,7 +172,23 @@ export default function LaporanPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-12 print:pb-0 print:space-y-4">
+    <div className="max-w-7xl mx-auto space-y-6 pb-12 print:m-0 print:max-w-none print:space-y-4 print:pb-0">
+      <style>
+        {`
+          @media print {
+            @page {
+              size: A4 landscape;
+              margin: 12mm;
+            }
+
+            html, body {
+              background: #fff !important;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+          }
+        `}
+      </style>
 
       {/* Fallback Banner Status */}
       {message && (
@@ -210,21 +226,34 @@ export default function LaporanPage() {
       </div>
 
       {/* PRINT-ONLY HEADER */}
-      <div className="hidden print:block border-b-2 border-slate-800 pb-4 text-center">
-        <h1 className="text-2xl font-bold text-slate-900 tracking-wide uppercase">Laporan Presensi Karyawan</h1>
-        <p className="text-md text-slate-700 mt-1 font-semibold">Sistem Presensi Deteksi Wajah & Geofence (Presensia)</p>
-        <p className="mt-1 text-xs text-slate-500">
-          Periode Rekap: <span className="font-bold">{formatDate(filters.from)}</span> s.d. <span className="font-bold">{formatDate(filters.to)}</span>
-        </p>
-        {filters.department && (
-          <p className="text-xs text-slate-500 mt-0.5">
-            Departemen: <span className="font-bold">{filters.department}</span>
-          </p>
-        )}
+      <div className="hidden print:block border-b-2 border-slate-900 pb-4">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h1 className="text-2xl font-black uppercase tracking-wide text-slate-950">Laporan Presensi Karyawan</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-700">Presensia - Sistem Presensi Wajah, Jadwal Kerja, dan Geofence</p>
+            <p className="mt-2 text-xs text-slate-600">
+              Laporan ini memuat data sesuai filter yang aktif di dashboard saat tombol cetak ditekan.
+            </p>
+          </div>
+          <div className="min-w-64 rounded-lg border border-slate-300 p-3 text-xs text-slate-700">
+            <div className="grid grid-cols-[88px_1fr] gap-y-1">
+              <span className="font-bold">Periode</span>
+              <span>{formatDate(filters.from)} - {formatDate(filters.to)}</span>
+              <span className="font-bold">Departemen</span>
+              <span>{filters.department || 'Semua Departemen'}</span>
+              <span className="font-bold">Status</span>
+              <span>{statusFilterLabel(filters.status)}</span>
+              <span className="font-bold">Pencarian</span>
+              <span>{searchQuery.trim() || '-'}</span>
+              <span className="font-bold">Dicetak</span>
+              <span>{new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* STAT CARDS GRID - 5 cards that scale beautifully */}
-      <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 print:grid-cols-5">
+      <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 print:hidden">
         <ReportStat
           title="Total Presensi"
           value={stats.total}
@@ -325,7 +354,7 @@ export default function LaporanPage() {
             </div>
 
             {/* TABLE CONTAINER FOR SCREEN > 1024px */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto print:hidden">
               <table className="w-full text-left text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -355,6 +384,8 @@ export default function LaporanPage() {
                 </tbody>
               </table>
             </div>
+
+            <PrintReportTable records={filteredRecords} />
 
             {/* MOBILE LAYOUT CARDS FOR SCREEN < 768px (Beautiful Grid Fallback) */}
             <div className="md:hidden p-4 space-y-4 print:hidden">
@@ -661,11 +692,74 @@ function ReportCard({ row }) {
   );
 }
 
+function PrintReportTable({ records }) {
+  return (
+    <div className="hidden print:block">
+      <div className="mb-2 flex items-center justify-between text-xs text-slate-600">
+        <p className="font-bold">Detail Data Presensi</p>
+        <p>Total data: <span className="font-bold">{records.length}</span></p>
+      </div>
+      <table className="w-full border-collapse text-[10px]">
+        <thead>
+          <tr className="bg-slate-100 text-left font-bold uppercase text-slate-700">
+            <th className="border border-slate-300 px-2 py-1.5">No</th>
+            <th className="border border-slate-300 px-2 py-1.5">Karyawan</th>
+            <th className="border border-slate-300 px-2 py-1.5">Departemen</th>
+            <th className="border border-slate-300 px-2 py-1.5">Tanggal</th>
+            <th className="border border-slate-300 px-2 py-1.5">Masuk</th>
+            <th className="border border-slate-300 px-2 py-1.5">Keluar</th>
+            <th className="border border-slate-300 px-2 py-1.5">Jam Kerja</th>
+            <th className="border border-slate-300 px-2 py-1.5">Status Telat</th>
+            <th className="border border-slate-300 px-2 py-1.5">Tipe</th>
+            <th className="border border-slate-300 px-2 py-1.5">Lokasi</th>
+            <th className="border border-slate-300 px-2 py-1.5">Geofence</th>
+            <th className="border border-slate-300 px-2 py-1.5">Skor Wajah</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.length === 0 ? (
+            <tr>
+              <td colSpan="12" className="border border-slate-300 px-2 py-8 text-center font-semibold text-slate-500">
+                Tidak ada data yang sesuai dengan filter laporan.
+              </td>
+            </tr>
+          ) : records.map((row, index) => (
+            <tr key={row.id || `${row.employee_id}-${row.date}-${index}`} className="break-inside-avoid">
+              <td className="border border-slate-300 px-2 py-1.5 text-center">{index + 1}</td>
+              <td className="border border-slate-300 px-2 py-1.5">
+                <p className="font-bold text-slate-900">{row.employee_name}</p>
+                <p className="text-[9px] text-slate-500">{row.position || '-'}</p>
+              </td>
+              <td className="border border-slate-300 px-2 py-1.5">{row.department || '-'}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{formatDate(row.date)}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{formatTime(row.check_in)}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{formatTime(row.check_out)}</td>
+              <td className="border border-slate-300 px-2 py-1.5 font-bold">{workDuration(row.check_in, row.check_out)}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{isAttendanceLate(row) ? lateLabel(row) : 'Tidak terlambat'}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{attendanceModeLabel(row.attendance_mode)}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{row.office_location_name || 'Remote/Lapangan'}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{geofenceLabel(row)}</td>
+              <td className="border border-slate-300 px-2 py-1.5">{row.face_similarity !== undefined && row.face_similarity !== null ? `${Math.round(row.face_similarity * 100)}%` : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function LocationBadge({ row }) {
   if (row.is_mock_location) return <Badge type="fake_gps">Fake GPS</Badge>;
   if (row.geofence_status === 'inside') return <Badge type="hadir">Dalam Area</Badge>;
   if (row.geofence_status === 'outside') return <Badge type="luar_geofence">Luar Area</Badge>;
   return <span className="text-xs font-semibold italic text-slate-400">Bebas Area</span>;
+}
+
+function geofenceLabel(row) {
+  if (row.is_mock_location) return 'Fake GPS';
+  if (row.geofence_status === 'inside') return 'Dalam Area';
+  if (row.geofence_status === 'outside') return 'Luar Area';
+  return 'Bebas Area';
 }
 
 function isAttendanceLate(row) {
@@ -691,6 +785,14 @@ function workDuration(checkIn, checkOut) {
   if (hours <= 0) return `${minutes} menit`;
   if (minutes === 0) return `${hours} jam`;
   return `${hours} jam ${minutes} menit`;
+}
+
+function statusFilterLabel(value) {
+  if (value === 'present') return 'Hadir';
+  if (value === 'late') return 'Terlambat';
+  if (value === 'outside') return 'Luar Geofence';
+  if (value === 'fake_gps') return 'Fake GPS';
+  return 'Semua Status';
 }
 
 function EmptyReportState({ onReset }) {

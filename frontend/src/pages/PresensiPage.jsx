@@ -328,7 +328,7 @@ function AttendanceRow({ record, onView }) {
         </Badge>
       </td>
       <td className="px-5 py-3">
-        <p className="font-semibold text-slate-700">{record.gps_accuracy_meters ?? '-'} m</p>
+        <p className="font-semibold text-slate-700">{formatMeters(record.gps_accuracy_meters)}</p>
         {record.is_mock_location && (
           <p className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-rose-600">
             <AlertTriangle size={13} />
@@ -372,12 +372,14 @@ function AttendanceDetail({ record }) {
           <DetailItem label="Source" value={record.source} />
           <DetailItem label="Check-in" value={formatTime(record.check_in)} />
           <DetailItem label="Check-out" value={formatTime(record.check_out)} />
-          <DetailItem label="Akurasi GPS" value={`${record.gps_accuracy_meters ?? '-'} meter`} />
-          <DetailItem label="Jarak dari kantor" value={`${formatNumber(record.distance_from_office_meters)} meter`} />
+          <DetailItem label="Akurasi GPS" value={formatMeters(record.gps_accuracy_meters, 'meter')} />
+          <DetailItem label="Jarak dari kantor" value={formatMeters(record.distance_from_office_meters, 'meter')} />
+          <DetailItem label="Radius kantor" value={formatMeters(record.office_location_radius_meters, 'meter')} />
           <DetailItem label="Latitude" value={record.latitude ?? '-'} />
           <DetailItem label="Longitude" value={record.longitude ?? '-'} />
           <DetailItem label="Skor wajah" value={formatScore(record.face_similarity)} />
           <DetailItem label="Threshold wajah" value={formatScore(record.face_threshold)} />
+          {record.note && <DetailItem label="Catatan audit" value={record.note} />}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -389,6 +391,8 @@ function AttendanceDetail({ record }) {
             Koordinat presensi: <strong>{formatCoordinate(record.latitude, record.longitude)}</strong>
             <br />
             Lokasi kantor: <strong>{record.office_location_name || 'Tidak terkait kantor'}</strong>
+            <br />
+            Radius kantor: <strong>{formatMeters(record.office_location_radius_meters, 'meter')}</strong>
           </div>
         </div>
       </div>
@@ -449,6 +453,19 @@ function formatScore(value) {
 function formatNumber(value) {
   if (value === null || value === undefined) return '-';
   return Number(value).toLocaleString('id-ID');
+}
+
+function formatMeters(value, unit = 'm') {
+  if (value === null || value === undefined) return `- ${unit}`;
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return `- ${unit}`;
+
+  const formatted = numericValue.toLocaleString('id-ID', {
+    maximumFractionDigits: 1,
+  });
+
+  return `${formatted} ${unit}`;
 }
 
 function formatCoordinate(latitude, longitude) {

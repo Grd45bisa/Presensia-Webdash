@@ -296,10 +296,11 @@ function DeviceRow({ device, busyKey, onRevoke, onResetEmployee }) {
           <button
             onClick={() => onRevoke(device)}
             disabled={!device.is_active || busyKey === key}
+            title={device.is_active ? 'Cabut akses device ini' : 'Device ini sudah tidak aktif'}
             className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ShieldOff size={15} />
-            Cabut
+            {device.is_active ? 'Cabut' : 'Sudah Dicabut'}
           </button>
           <button
             onClick={() => onResetEmployee(device)}
@@ -344,10 +345,11 @@ function DeviceCard({ device, busyKey, onRevoke, onResetEmployee }) {
         <button
           onClick={() => onRevoke(device)}
           disabled={!device.is_active || busyKey === key}
+          title={device.is_active ? 'Cabut akses device ini' : 'Device ini sudah tidak aktif'}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ShieldOff size={15} />
-          Cabut Device
+          {device.is_active ? 'Cabut Device' : 'Sudah Dicabut'}
         </button>
         <button
           onClick={() => onResetEmployee(device)}

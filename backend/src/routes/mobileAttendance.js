@@ -146,6 +146,16 @@ function buildValidation(employee, office, point) {
   const canAttendOutsideOffice = Boolean(employee.can_attend_outside_office);
   const requiresOfficeGeofence = attendanceMode === 'office' && !canAttendOutsideOffice;
 
+  if (point.isMockLocation) {
+    return {
+      allowed: false,
+      geofence_status: 'suspected_mock_location',
+      attendance_mode: attendanceMode,
+      can_attend_outside_office: canAttendOutsideOffice,
+      message: 'Presensi ditolak karena perangkat terindikasi memakai Fake GPS.',
+    };
+  }
+
   if (!requiresOfficeGeofence) {
     return {
       allowed: true,
@@ -198,6 +208,75 @@ function buildValidation(employee, office, point) {
   };
 }
 
+function jakartaDateString(value = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(value);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+async function logMockLocationAttempt(employee, point, validation) {
+  if (!supabaseAdmin || !employee?.id) return;
+
+  const now = new Date();
+  const date = jakartaDateString(now);
+  const officeLocation = validation.office_location || employee.office_locations || null;
+  const auditFields = {
+    latitude: point.latitude,
+    longitude: point.longitude,
+    gps_accuracy_meters: Number.isFinite(point.accuracyMeters) ? point.accuracyMeters : null,
+    is_mock_location: true,
+    geofence_status: 'suspected_mock_location',
+    office_location_id: officeLocation?.id || employee.office_location_id || null,
+    distance_from_office_meters: validation.distance_meters ?? null,
+    note: 'Percobaan presensi ditolak karena perangkat terindikasi memakai Fake GPS.',
+    updated_at: now.toISOString(),
+  };
+
+  const { data: existing, error: findError } = await supabaseAdmin
+    .from('attendance_records')
+    .select('id')
+    .eq('employee_id', employee.id)
+    .eq('date', date)
+    .maybeSingle();
+
+  if (findError) {
+    console.warn('[Fake GPS Audit Lookup Warning]', findError);
+    return;
+  }
+
+  if (existing?.id) {
+    const { error } = await supabaseAdmin
+      .from('attendance_records')
+      .update(auditFields)
+      .eq('id', existing.id);
+
+    if (error) {
+      console.warn('[Fake GPS Audit Warning]', error);
+    }
+    return;
+  }
+
+  const { error } = await supabaseAdmin
+    .from('attendance_records')
+    .insert({
+      ...auditFields,
+    employee_id: employee.id,
+      date,
+    source: 'face',
+    status: 'present',
+    check_in: now.toISOString(),
+    });
+
+  if (error) {
+    console.warn('[Fake GPS Audit Warning]', error);
+  }
+}
+
 function normalizeOffice(office) {
   if (!office) return null;
 
@@ -248,10 +327,18 @@ async function getSupabaseEmployee(employeeId) {
 
 router.post('/validate-geofence', async (req, res, next) => {
   try {
-    const { employee_id: employeeId, latitude, longitude } = req.body || {};
+    const {
+      employee_id: employeeId,
+      latitude,
+      longitude,
+      accuracy_meters: accuracyMeters,
+      is_mock_location: isMockLocation,
+    } = req.body || {};
     const point = {
       latitude: Number(latitude),
       longitude: Number(longitude),
+      accuracyMeters: Number(accuracyMeters),
+      isMockLocation: isMockLocation === true,
     };
 
     if (!employeeId || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) {
@@ -268,6 +355,9 @@ router.post('/validate-geofence', async (req, res, next) => {
       }
 
       const validation = buildValidation(employee, employee.office_locations, point);
+      if (point.isMockLocation) {
+        await logMockLocationAttempt(employee, point, validation);
+      }
       return res.json({ success: true, source: 'supabase', validation });
     }
 

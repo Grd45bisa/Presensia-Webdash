@@ -31,6 +31,7 @@ async function normalizeSupabaseRecord(row) {
     position: profile.position || '',
     attendance_mode: profile.attendance_mode || 'office',
     office_location_name: office.name || null,
+    office_location_radius_meters: office.radius_meters ?? null,
     date: row.date,
     check_in: row.check_in,
     check_out: row.check_out,
@@ -42,13 +43,14 @@ async function normalizeSupabaseRecord(row) {
     distance_from_office_meters: row.distance_from_office_meters,
     face_similarity: row.face_similarity,
     face_threshold: row.face_threshold,
+    note: row.note || '',
     evidence_photo_path: evidencePath,
     evidence_photo_in_path: evidenceInPath,
     evidence_photo_out_path: evidenceOutPath,
     evidence_photo_url: await createEvidenceSignedUrl(evidencePath),
     evidence_photo_in_url: await createEvidenceSignedUrl(evidenceInPath),
     evidence_photo_out_url: await createEvidenceSignedUrl(evidenceOutPath),
-    status: row.status || 'present',
+    status: row.is_mock_location ? 'fake_gps' : (row.status || 'present'),
     source: row.source || 'manual',
   };
 }
@@ -85,6 +87,7 @@ async function listFromSupabase() {
       distance_from_office_meters,
       face_similarity,
       face_threshold,
+      note,
       evidence_photo_path,
       evidence_photo_in_path,
       evidence_photo_out_path,
@@ -96,7 +99,8 @@ async function listFromSupabase() {
         attendance_mode
       ),
       office_locations:office_location_id (
-        name
+        name,
+        radius_meters
       )
     `)
     .order('date', { ascending: false })

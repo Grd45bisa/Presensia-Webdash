@@ -421,9 +421,8 @@ function OfficeMobileCard({ office, isSelected, onSelect, onEdit, onDelete }) {
   return (
     <article
       onClick={onSelect}
-      className={`rounded-xl border bg-white p-4 shadow-sm transition ${
-        isSelected ? 'border-blue-200 ring-2 ring-blue-100' : 'border-slate-200'
-      }`}
+      className={`rounded-xl border bg-white p-4 shadow-sm transition ${isSelected ? 'border-blue-200 ring-2 ring-blue-100' : 'border-slate-200'
+        }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

@@ -70,6 +70,13 @@ const cardRoutes = {
   'Indikasi Fake GPS': '/presensi',
 };
 
+function getCurrentPeriod() {
+  return new Intl.DateTimeFormat('id-ID', {
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date());
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState(emptyDashboardData);
@@ -206,7 +213,7 @@ export default function DashboardPage() {
           <SourcePill
             icon={CalendarDays}
             label="Periode"
-            value="Mei 2026"
+            value={getCurrentPeriod()}
             detail="Data presensi aktif"
             tone="blue"
           />
@@ -418,14 +425,15 @@ function TrendCard({ trendData, onRefresh, onExport, onDetail }) {
   const [isPeriodOpen, setIsPeriodOpen] = useState(false);
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [period, setPeriod] = useState('Bulanan');
-  const normalizedData = useMemo(() => normalizeTrendData(trendData), [trendData]);
-  const chartData = useMemo(() => buildTrendByPeriod(normalizedData, period), [normalizedData, period]);
+  const currentPeriod = useMemo(() => getCurrentPeriod(), []);
+  const normalizedData = useMemo(() => normalizeTrendData(trendData, currentPeriod), [trendData, currentPeriod]);
+  const chartData = useMemo(() => buildTrendByPeriod(normalizedData, period, currentPeriod), [normalizedData, period, currentPeriod]);
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">Tren Presensi - Mei 2026</h3>
+          <h3 className="text-lg font-bold text-slate-900">Tren Presensi - {currentPeriod}</h3>
           <p className="mt-1 text-sm font-medium text-slate-500">
             Hover titik atau batang grafik untuk melihat data harian.
           </p>
@@ -885,10 +893,11 @@ function TrendTooltip({ active, payload, label }) {
   }
 
   const data = payload[0]?.payload || {};
+  const currentPeriod = getCurrentPeriod();
 
   return (
     <div className="min-w-[190px] rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs shadow-xl">
-      <p className="mb-2 font-bold text-slate-800">{data.date || `${label} Mei 2026`}</p>
+      <p className="mb-2 font-bold text-slate-800">{data.date || `${label} ${currentPeriod}`}</p>
       <TooltipLine label="Hadir" value={data.hadir} valueClass="text-blue-600" />
       <TooltipLine label="Belum Presensi" value={data.belumPresensi} valueClass="text-slate-700" />
       <TooltipLine
@@ -909,7 +918,7 @@ function TooltipLine({ label, value, valueClass }) {
   );
 }
 
-function normalizeTrendData(trendData) {
+function normalizeTrendData(trendData, currentPeriod = getCurrentPeriod()) {
   return trendData.map((item, index) => {
     if (typeof item === 'number') {
       const total = 128;
@@ -917,7 +926,7 @@ function normalizeTrendData(trendData) {
 
       return {
         day: index + 1,
-        date: `${String(index + 1).padStart(2, '0')} Mei 2026`,
+        date: `${String(index + 1).padStart(2, '0')} ${currentPeriod}`,
         hadir,
         belumPresensi: total - hadir,
         tingkatKehadiran: item,
@@ -927,7 +936,7 @@ function normalizeTrendData(trendData) {
     return {
       ...item,
       day: item.day || index + 1,
-      date: item.date || `${String(index + 1).padStart(2, '0')} Mei 2026`,
+      date: item.date || `${String(index + 1).padStart(2, '0')} ${currentPeriod}`,
       hadir: Number(item.hadir || 0),
       belumPresensi: Number(item.belumPresensi || 0),
       tingkatKehadiran: Number(item.tingkatKehadiran || 0),
@@ -935,7 +944,7 @@ function normalizeTrendData(trendData) {
   });
 }
 
-function buildTrendByPeriod(data, period) {
+function buildTrendByPeriod(data, period, currentPeriod = getCurrentPeriod()) {
   if (period === 'Harian') {
     return data.slice(-7).map((item) => ({ ...item, day: String(item.day) }));
   }
@@ -953,7 +962,7 @@ function buildTrendByPeriod(data, period) {
 
       return {
         day: `M${index + 1}`,
-        date: `Minggu ${index + 1} Mei 2026`,
+        date: `Minggu ${index + 1} ${currentPeriod}`,
         hadir,
         belumPresensi,
         tingkatKehadiran,

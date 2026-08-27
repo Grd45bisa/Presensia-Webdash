@@ -95,7 +95,7 @@ Catatan penting:
 Buat file `Website/frontend/.env`:
 
 ```env
-VITE_BACKEND_URL=https://apipre.kitapunya.web.id
+VITE_BACKEND_URL=https://apipre.kitaundang.my.id/
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
@@ -230,7 +230,7 @@ POST /api/auth/qr-login
 Untuk emulator Android, base URL default mobile app adalah:
 
 ```text
-https://apipre.kitapunya.web.id
+https://apipre.kitaundang.my.id/
 ```
 
 ## Catatan Status Data

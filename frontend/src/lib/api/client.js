@@ -193,6 +193,14 @@ export function exportAttendanceReportCsv(filters = {}) {
   return requestBlob(`/api/admin/reports/attendance/export.csv${toQueryString(filters)}`);
 }
 
+export function getEmployeeDailyReport(params = {}) {
+  return request('/api/admin/reports/employee-daily' + toQueryString(params));
+}
+
+export function exportEmployeeDailyReportXlsx(params = {}) {
+  return requestBlob('/api/admin/reports/employee-daily-export' + toQueryString(params));
+}
+
 export function getWorklogs(filters = {}) {
   return request(`/api/admin/worklogs${toQueryString(filters)}`);
 }

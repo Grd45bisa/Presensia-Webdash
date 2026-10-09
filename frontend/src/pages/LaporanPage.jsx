@@ -20,6 +20,8 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import EmployeeDailyReportTab from '@/components/Laporan/EmployeeDailyReportTab';
+import { FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import {
   exportAttendanceReportCsv,
@@ -31,6 +33,7 @@ const defaultTo = toDateInput(today);
 const defaultFrom = toDateInput(new Date(today.getFullYear(), today.getMonth(), 1));
 
 export default function LaporanPage() {
+  const [activeTab, setActiveTab] = useState('employee_daily');
   const [records, setRecords] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [summary, setSummary] = useState({
@@ -252,7 +255,40 @@ export default function LaporanPage() {
         </div>
       </div>
 
-      {/* STAT CARDS GRID - 5 cards that scale beautifully */}
+      {/* NAVIGATION TABS (PERORANGAN VS REKAP MASAL) */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 print:hidden">
+        <button
+          type="button"
+          onClick={() => setActiveTab('employee_daily')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+            activeTab === 'employee_daily'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <FileSpreadsheet size={16} />
+          <span>Laporan Perorangan & Tracker (Excel)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${
+            activeTab === 'overview'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <UsersRound size={16} />
+          <span>Rekapitulasi Semua Karyawan</span>
+        </button>
+      </div>
+
+      {activeTab === 'employee_daily' ? (
+        <EmployeeDailyReportTab />
+      ) : (
+        <>
+          {/* STAT CARDS GRID - 5 cards that scale beautifully */}
       <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 print:hidden">
         <ReportStat
           title="Total Presensi"
@@ -465,6 +501,9 @@ export default function LaporanPage() {
         </div>
 
       </section>
+
+      </>
+      )}
 
       {/* PRINT-ONLY SIGN OFF */}
       <div className="hidden print:flex justify-between items-center mt-20 px-8 text-sm text-slate-700">
